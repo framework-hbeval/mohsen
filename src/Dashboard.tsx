@@ -1,610 +1,833 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+// ─── Config ───────────────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://dcchprqwjfblcypsaggz.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_JFDcUV-OcYLsBNdzr9JmFw_jeYLjzzD";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-interface Merchant {
-  id: string;
-  store_name: string;
-  store_logo: string;
-  plan: "free" | "pro" | "enterprise";
-  products_analyzed: number;
-  monthly_limit: number;
-}
-
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Merchant { id: string; store_name: string; store_domain: string; store_id: string; }
 interface Product {
-  id: string;
-  external_product_id: string;
-  name: string;
-  image_url: string;
-  price: number;
-  quick_score: number;
-  score_grade: string;
-  score_title: number;
-  score_description: number;
-  score_images: number;
-  score_pricing: number;
-  analysis_json: {
-    issues: string[];
-    suggestions: {
-      title?: string;
-      description?: string;
-      price_suggestion?: number;
-      price_reasoning?: string;
-    };
-    keywords: string[];
-  } | null;
-  is_optimized: boolean;
-  last_analyzed: string | null;
+  id: string; name: string; price: number; currency: string;
+  images_count: number; main_image: string; category: string; sku: string;
+  score_total: number; score_title: number; score_images: number;
+  score_description: number; score_price: number; score_seo: number;
+  needs_attention: boolean; status: string; description: string;
 }
+interface AIResult { title: string; description: string; keywords: string[]; price_suggestion: string; reasoning: string; }
 
-interface MerchantStats {
-  total_products: number;
-  avg_score: number;
-  needs_attention: number;
-  optimized_count: number;
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : "#ef4444";
+const scoreGrade = (s: number) => s >= 80 ? "A" : s >= 60 ? "B" : s >= 40 ? "C" : "D";
+const scoreLabel = (s: number) => s >= 80 ? "ممتاز" : s >= 60 ? "جيد" : s >= 40 ? "مقبول" : "ضعيف";
+const fmtPrice = (p: number, c: string) => `${p.toLocaleString("ar-SA")} ${c === "SAR" ? "ر.س" : c}`;
 
-function getScoreColor(score: number): string {
-  if (score >= 80) return "#10b981";
-  if (score >= 60) return "#3b82f6";
-  if (score >= 40) return "#f59e0b";
-  if (score >= 20) return "#ef4444";
-  return "#6b7280";
-}
+// ─── Fonts Injection ──────────────────────────────────────────────────────────
+const fontStyle = `
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #060a12; font-family: 'IBM Plex Sans Arabic', sans-serif; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: #0d1421; }
+  ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 4px; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .fade-up { animation: fadeUp 0.4s ease forwards; }
+  .card-hover:hover { border-color: #1e3a5f !important; transform: translateY(-1px); transition: all 0.2s; }
+  input:focus { outline: none; border-color: #10b981 !important; }
+`;
 
-function getGradeLabel(grade: string): string {
-  const map: Record<string, string> = {
-    A: "ممتاز", B: "جيد", C: "متوسط", D: "ضعيف", F: "سيئ",
-  };
-  return map[grade] ?? grade;
-}
-
-function ScoreRing({ score, size = 60 }: { score: number; size?: number }) {
-  const r = size / 2 - 6;
+// ─── Score Arc ────────────────────────────────────────────────────────────────
+function ScoreArc({ score, size = 64 }: { score: number; size?: number }) {
+  const r = (size - 10) / 2;
   const circ = 2 * Math.PI * r;
-  const offset = circ - (score / 100) * circ;
-  const color = getScoreColor(score);
+  const pct = score / 100;
+  const dashArr = circ * 0.75;
+  const dashOff = dashArr * (1 - pct);
+  const color = scoreColor(score);
+  const cx = size / 2, cy = size / 2;
   return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1e2430" strokeWidth="5"/>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5"
-        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-        style={{ transition: "stroke-dashoffset 0.8s ease" }}/>
-      <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
-        fill={color} fontSize={size * 0.22} fontWeight="700"
-        style={{ transform: "rotate(90deg)", transformOrigin: `${size/2}px ${size/2}px` }}>
+    <svg width={size} height={size} style={{ transform: "rotate(135deg)" }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#0d1421" strokeWidth={8}
+        strokeDasharray={`${dashArr} ${circ - dashArr}`} strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={8}
+        strokeDasharray={`${dashArr * pct} ${circ}`}
+        strokeDashoffset={0} strokeLinecap="round"
+        style={{ transition: "stroke-dasharray 1s cubic-bezier(0.4,0,0.2,1)" }} />
+      <text x={cx} y={cy + 6} textAnchor="middle" fill={color}
+        style={{ transform: `rotate(-135deg)`, transformOrigin: `${cx}px ${cy}px`,
+          fontSize: size > 80 ? 22 : 14, fontWeight: 700, fontFamily: "JetBrains Mono, monospace" }}>
         {score}
       </text>
     </svg>
   );
 }
 
-function MiniBar({ label, value, max = 25, color }: {
-  label: string; value: number; max?: number; color: string;
-}) {
-  const pct = Math.round((value / max) * 100);
+// ─── Score Bar ────────────────────────────────────────────────────────────────
+function ScoreBar({ label, value, icon }: { label: string; value: number; icon: string }) {
   return (
-    <div style={{ marginBottom: "8px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-        <span style={{ fontSize: "12px", color: "#9ca3af" }}>{label}</span>
-        <span style={{ fontSize: "12px", color, fontWeight: "600" }}>{value}/{max}</span>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <span style={{ fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", gap: 5 }}>
+          <span>{icon}</span>{label}
+        </span>
+        <span style={{ fontSize: 12, fontFamily: "JetBrains Mono, monospace", color: scoreColor(value), fontWeight: 600 }}>
+          {value}%
+        </span>
       </div>
-      <div style={{ height: "4px", background: "#1e2430", borderRadius: "2px", overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: "2px",
-          transition: "width 0.8s ease" }}/>
+      <div style={{ height: 4, background: "#0d1421", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${value}%`,
+          background: `linear-gradient(90deg, ${scoreColor(value)}88, ${scoreColor(value)})`,
+          borderRadius: 2, transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)"
+        }} />
       </div>
     </div>
   );
 }
 
-function ScorePill({ value, max }: { value: number; max: number }) {
-  const pct = Math.round((value / max) * 100);
-  const color = getScoreColor(pct);
-  if (!value && value !== 0) return <span style={{ color: "#6b7280", fontSize: "12px" }}>—</span>;
+// ─── Store Score Card ─────────────────────────────────────────────────────────
+function StoreScoreCard({ products }: { products: Product[] }) {
+  if (!products.length) return null;
+
+  const avg = Math.round(products.reduce((s, p) => s + p.score_total, 0) / products.length);
+  const avgTitle = Math.round(products.reduce((s, p) => s + p.score_title, 0) / products.length);
+  const avgImages = Math.round(products.reduce((s, p) => s + p.score_images, 0) / products.length);
+  const avgDesc = Math.round(products.reduce((s, p) => s + p.score_description, 0) / products.length);
+  const avgSeo = Math.round(products.reduce((s, p) => s + p.score_seo, 0) / products.length);
+  const avgPrice = Math.round(products.reduce((s, p) => s + p.score_price, 0) / products.length);
+
+  const grade = scoreGrade(avg);
+  const gradeColors: Record<string, string> = { A: "#10b981", B: "#3b82f6", C: "#f59e0b", D: "#ef4444" };
+
   return (
-    <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: "100px",
-      fontSize: "12px", fontWeight: "600", background: `${color}18`, color,
-      border: `1px solid ${color}30` }}>
-      {value}/{max}
-    </span>
+    <div style={{ ...S.card, display: "grid", gridTemplateColumns: "auto 1fr", gap: 32, alignItems: "start" }} className="fade-up">
+      {/* Left: big score */}
+      <div style={{ textAlign: "center", minWidth: 140 }}>
+        <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+          Store Quick Score
+        </div>
+        <ScoreArc score={avg} size={120} />
+        <div style={{ marginTop: 10 }}>
+          <span style={{
+            display: "inline-block", fontSize: 32, fontWeight: 800,
+            color: gradeColors[grade], fontFamily: "JetBrains Mono, monospace",
+            background: `${gradeColors[grade]}15`, padding: "2px 14px", borderRadius: 8,
+          }}>{grade}</span>
+        </div>
+        <div style={{ fontSize: 14, color: scoreColor(avg), marginTop: 8, fontWeight: 600 }}>
+          {scoreLabel(avg)}
+        </div>
+      </div>
+
+      {/* Right: breakdown */}
+      <div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>تقييم جودة متجرك</div>
+          <div style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>
+            بناءً على تحليل {products.length} منتج
+          </div>
+        </div>
+        <ScoreBar label="جودة العناوين" value={avgTitle} icon="✍️" />
+        <ScoreBar label="جودة الصور" value={avgImages} icon="🖼️" />
+        <ScoreBar label="جودة الوصف" value={avgDesc} icon="📝" />
+        <ScoreBar label="تحسين SEO" value={avgSeo} icon="🔍" />
+        <ScoreBar label="تنافسية الأسعار" value={avgPrice} icon="💰" />
+
+        {/* Issues summary */}
+        <div style={{ marginTop: 16, padding: "12px 14px", background: "#0d1421", borderRadius: 8, border: "1px solid #0f2035" }}>
+          {[
+            { cond: avgTitle < 60, msg: "عناوين المنتجات تحتاج تحسيناً — أضف تفاصيل ومزايا" },
+            { cond: avgImages < 60, msg: "أضف صوراً أكثر لمنتجاتك — الحد الأدنى 3 صور لكل منتج" },
+            { cond: avgDesc < 60, msg: "الوصف قصير جداً — استهدف 100+ كلمة لكل منتج" },
+            { cond: avgSeo < 60, msg: "SEO ضعيف — أضف كلمات مفتاحية في العناوين والأوصاف" },
+          ].filter(x => x.cond).length === 0 ? (
+            <div style={{ fontSize: 13, color: "#10b981" }}>✅ متجرك في حالة ممتازة، استمر في المحافظة على الجودة</div>
+          ) : (
+            [
+              { cond: avgTitle < 60, msg: "عناوين المنتجات تحتاج تحسيناً — أضف تفاصيل ومزايا" },
+              { cond: avgImages < 60, msg: "أضف صوراً أكثر لمنتجاتك — الحد الأدنى 3 صور لكل منتج" },
+              { cond: avgDesc < 60, msg: "الوصف قصير جداً — استهدف 100+ كلمة لكل منتج" },
+              { cond: avgSeo < 60, msg: "SEO ضعيف — أضف كلمات مفتاحية في العناوين والأوصاف" },
+            ].filter(x => x.cond).map((issue, i) => (
+              <div key={i} style={{ fontSize: 12, color: "#f59e0b", display: "flex", gap: 6, alignItems: "flex-start", marginTop: i > 0 ? 6 : 0 }}>
+                <span style={{ marginTop: 1 }}>⚠</span><span>{issue.msg}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-function ProductModal({ product, onClose, onOptimized, merchantId }: {
-  product: Product; onClose: () => void; onOptimized: () => void; merchantId: string;
-}) {
+// ─── AI Optimizer Panel ───────────────────────────────────────────────────────
+function AIOptimizerPanel({ product, merchantId, onClose }: { product: Product; merchantId: string; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AIResult | null>(null);
+  const [error, setError] = useState("");
   const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [activeTab, setActiveTab] = useState<"title" | "description" | "keywords">("title");
 
-  const applyOptimization = async () => {
+  async function runOptimizer() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-product`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchant_id: merchantId, product_id: product.id }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // Parse AI response into structured result
+      const aiText = data.analysis || data.result || JSON.stringify(data);
+      setResult(parseAIResult(aiText, product));
+    } catch (e: any) {
+      setError(e.message || "فشل الاتصال بالذكاء الاصطناعي");
+    }
+    setLoading(false);
+  }
+
+  function parseAIResult(text: string, p: Product): AIResult {
+    // Try to extract structured data from AI response
+    const titleMatch = text.match(/عنوان[^:：]*[:：]\s*([^\n]+)/);
+    const descMatch = text.match(/وصف[^:：]*[:：]\s*([\s\S]+?)(?=\n#|\nكلمات|$)/i);
+    const kwMatch = text.match(/كلمات[^:：]*[:：]\s*([^\n]+)/);
+
+    return {
+      title: titleMatch?.[1]?.trim() || `${p.name} - جودة عالية | أفضل سعر في السعودية`,
+      description: descMatch?.[1]?.trim() || `${p.name} من أفضل المنتجات في السوق السعودي. يتميز بجودة عالية وسعر تنافسي. مناسب لجميع الاحتياجات. يُشحن سريعاً لجميع مناطق المملكة.`,
+      keywords: kwMatch?.[1]?.split(/[,،]/).map(k => k.trim()).filter(Boolean) || [p.name, p.category, "سعودي", "متجر", "جودة"].filter(Boolean),
+      price_suggestion: `${p.price} ${p.currency}`,
+      reasoning: text,
+    };
+  }
+
+  async function applyChanges() {
+    if (!result) return;
     setApplying(true);
     try {
-      await supabase.from("products")
-        .update({ is_optimized: true, optimized_at: new Date().toISOString() })
-        .eq("merchant_id", merchantId)
-        .eq("external_product_id", product.external_product_id);
-      onOptimized();
-    } finally {
-      setApplying(false);
+      await fetch(`${SUPABASE_URL}/functions/v1/apply-optimization`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchant_id: merchantId,
+          product_id: product.id,
+          updates: { name: result.title, description: result.description },
+        }),
+      });
+      setApplied(true);
+    } catch {
+      setError("فشل تطبيق التغييرات");
     }
-  };
+    setApplying(false);
+  }
 
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()} dir="rtl">
-        <div style={styles.modalHeader}>
-          <h3 style={{ fontFamily: "Tajawal, sans-serif", fontSize: "18px", fontWeight: "700" }}>
-            تحليل: {product.name}
-          </h3>
-          <button onClick={onClose} style={styles.closeBtn}>✕</button>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
-          <div style={{ textAlign: "center" }}>
-            <ScoreRing score={product.quick_score} size={80}/>
-            <div style={{ fontSize: "12px", color: "#9ca3af", marginTop: "6px" }}>الدرجة الإجمالية</div>
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20,
+    }}>
+      <div style={{
+        background: "#0a1120", border: "1px solid #1e3a5f", borderRadius: 16,
+        width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto",
+        boxShadow: "0 25px 80px rgba(0,0,0,0.6)",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #0f2035", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>✨ AI Optimizer</div>
+            <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{product.name}</div>
           </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ marginBottom: "24px" }}>
-          <MiniBar label="جودة العنوان" value={product.score_title}
-            color={getScoreColor((product.score_title/25)*100)}/>
-          <MiniBar label="جودة الوصف" value={product.score_description}
-            color={getScoreColor((product.score_description/25)*100)}/>
-          <MiniBar label="جودة الصور" value={product.score_images}
-            color={getScoreColor((product.score_images/25)*100)}/>
-          <MiniBar label="تنافسية السعر" value={product.score_pricing}
-            color={getScoreColor((product.score_pricing/25)*100)}/>
+        <div style={{ padding: 24 }}>
+          {/* Current score */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+            <div style={S.miniStat}>
+              <div style={{ fontSize: 11, color: "#475569" }}>الدرجة الحالية</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: scoreColor(product.score_total), fontFamily: "JetBrains Mono" }}>{product.score_total}</div>
+            </div>
+            <div style={{ ...S.miniStat, flex: 1, justifyContent: "center", alignItems: "center", display: "flex" }}>
+              <div style={{ fontSize: 12, color: "#475569", textAlign: "center", lineHeight: 1.6 }}>
+                الذكاء الاصطناعي سيحسّن عنوان المنتج، وصفه، والكلمات المفتاحية
+                <br />لرفع درجته وزيادة المبيعات
+              </div>
+            </div>
+          </div>
+
+          {/* CTA if no result yet */}
+          {!result && !loading && (
+            <button onClick={runOptimizer} style={S.primaryBtn}>
+              🚀 تشغيل تحسين الذكاء الاصطناعي
+            </button>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <div style={{
+                width: 40, height: 40, border: "3px solid #0f2035", borderTopColor: "#10b981",
+                borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px",
+              }} />
+              <div style={{ fontSize: 13, color: "#475569" }}>الذكاء الاصطناعي يحلل منتجك...</div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div style={{ padding: 12, background: "#ef444415", border: "1px solid #ef444430", borderRadius: 8, marginBottom: 16 }}>
+              <span style={{ fontSize: 13, color: "#ef4444" }}>⚠ {error}</span>
+            </div>
+          )}
+
+          {/* Results */}
+          {result && (
+            <div style={{ animation: "fadeUp 0.4s ease" }}>
+              {/* Tabs */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#060a12", padding: 4, borderRadius: 8 }}>
+                {[{ k: "title", l: "العنوان" }, { k: "description", l: "الوصف" }, { k: "keywords", l: "الكلمات المفتاحية" }].map(t => (
+                  <button key={t.k} onClick={() => setActiveTab(t.k as any)} style={{
+                    flex: 1, padding: "7px 0", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13,
+                    background: activeTab === t.k ? "#10b98120" : "transparent",
+                    color: activeTab === t.k ? "#10b981" : "#475569",
+                    fontFamily: "IBM Plex Sans Arabic, sans-serif",
+                  }}>{t.l}</button>
+                ))}
+              </div>
+
+              {activeTab === "title" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>العنوان الحالي</div>
+                  <div style={{ padding: 12, background: "#060a12", borderRadius: 8, fontSize: 14, color: "#64748b", marginBottom: 12 }}>
+                    {product.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#10b981", marginBottom: 8 }}>✨ العنوان المقترح</div>
+                  <div style={{ padding: 12, background: "#10b98110", border: "1px solid #10b98130", borderRadius: 8, fontSize: 14, color: "#e2e8f0" }}>
+                    {result.title}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "description" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>الوصف الحالي</div>
+                  <div style={{ padding: 12, background: "#060a12", borderRadius: 8, fontSize: 13, color: "#64748b", marginBottom: 12, maxHeight: 100, overflow: "auto" }}>
+                    {product.description ? product.description.replace(/<[^>]*>/g, "") : "لا يوجد وصف"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#10b981", marginBottom: 8 }}>✨ الوصف المقترح</div>
+                  <div style={{ padding: 12, background: "#10b98110", border: "1px solid #10b98130", borderRadius: 8, fontSize: 13, color: "#e2e8f0", lineHeight: 1.7, maxHeight: 180, overflow: "auto" }}>
+                    {result.description}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "keywords" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#10b981", marginBottom: 12 }}>✨ الكلمات المفتاحية المقترحة</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {result.keywords.map((kw, i) => (
+                      <span key={i} style={{
+                        padding: "5px 12px", background: "#10b98115", border: "1px solid #10b98130",
+                        borderRadius: 20, fontSize: 13, color: "#10b981",
+                      }}>{kw}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Apply button */}
+              <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+                {applied ? (
+                  <div style={{ flex: 1, textAlign: "center", padding: 14, background: "#10b98115", borderRadius: 10, color: "#10b981", fontSize: 14, fontWeight: 600 }}>
+                    ✅ تم تطبيق التحسينات بنجاح
+                  </div>
+                ) : (
+                  <>
+                    <button onClick={applyChanges} disabled={applying} style={{ ...S.primaryBtn, flex: 1 }}>
+                      {applying ? "⏳ جاري التطبيق..." : "✅ تطبيق على المتجر"}
+                    </button>
+                    <button onClick={runOptimizer} style={{ ...S.secondaryBtn, padding: "0 16px" }}>
+                      🔄 إعادة
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Product Card ─────────────────────────────────────────────────────────────
+function ProductCard({ product, onOptimize }: { product: Product; onOptimize: (p: Product) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const col = scoreColor(product.score_total);
+
+  return (
+    <div style={{ ...S.card, padding: 0, overflow: "hidden" }} className="card-hover">
+      {/* Top bar */}
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${col}44, ${col})` }} />
+
+      <div style={{ padding: "16px 18px" }}>
+        {/* Header */}
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+          {product.main_image ? (
+            <img src={product.main_image} alt="" style={{ width: 52, height: 52, borderRadius: 8, objectFit: "cover", background: "#0d1421" }} />
+          ) : (
+            <div style={{ width: 52, height: 52, borderRadius: 8, background: "#0d1421", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>📦</div>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", lineHeight: 1.4, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {product.name}
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, color: "#10b981", fontWeight: 600 }}>{fmtPrice(product.price, product.currency)}</span>
+              {product.category && <span style={S.tag}>{product.category}</span>}
+              <span style={S.tag}>{product.images_count} صور</span>
+            </div>
+          </div>
+          <ScoreArc score={product.score_total} size={52} />
         </div>
 
-        {product.analysis_json?.issues && product.analysis_json.issues.length > 0 && (
-          <div style={{ marginBottom: "20px" }}>
-            <h4 style={{ fontSize: "14px", color: "#ef4444", marginBottom: "10px", fontWeight: "600" }}>
-              ⚠️ المشاكل المكتشفة
-            </h4>
-            {product.analysis_json.issues.map((issue, i) => (
-              <div key={i} style={styles.issuePill}>{issue}</div>
-            ))}
+        {/* Mini bars */}
+        {expanded && (
+          <div style={{ marginBottom: 12, animation: "fadeUp 0.3s ease" }}>
+            <ScoreBar label="العنوان" value={product.score_title} icon="✍️" />
+            <ScoreBar label="الصور" value={product.score_images} icon="🖼️" />
+            <ScoreBar label="الوصف" value={product.score_description} icon="📝" />
+            <ScoreBar label="SEO" value={product.score_seo} icon="🔍" />
           </div>
         )}
 
-        {product.analysis_json?.suggestions?.title && (
-          <div style={{ marginBottom: "20px" }}>
-            <h4 style={{ fontSize: "14px", color: "#00d4aa", marginBottom: "10px", fontWeight: "600" }}>
-              ✨ العنوان المقترح
-            </h4>
-            <div style={styles.suggestionBox}>{product.analysis_json.suggestions.title}</div>
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onOptimize(product)}
+            style={{ ...S.primaryBtn, flex: 1, padding: "8px 0", fontSize: 12 }}
+          >
+            ✨ تحسين بالذكاء الاصطناعي
+          </button>
+          <button
+            onClick={() => setExpanded(x => !x)}
+            style={{ ...S.secondaryBtn, padding: "8px 12px", fontSize: 12 }}
+          >
+            {expanded ? "▲" : "▼"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
+export default function Dashboard() {
+  const [merchantId, setMerchantId] = useState<string | null>(null);
+  const [merchant, setMerchant] = useState<Merchant | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [filtered, setFiltered] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "attention" | "good">("all");
+  const [activeNav, setActiveNav] = useState<"overview" | "products" | "analytics" | "settings">("overview");
+  const [optimizerProduct, setOptimizerProduct] = useState<Product | null>(null);
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    setMerchantId(p.get("merchant_id"));
+  }, []);
+
+  useEffect(() => {
+    if (merchantId) loadData();
+    else setLoading(false);
+  }, [merchantId]);
+
+  useEffect(() => {
+    let list = [...products];
+    if (filter === "attention") list = list.filter(p => p.needs_attention);
+    if (filter === "good") list = list.filter(p => !p.needs_attention);
+    if (search.trim()) list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+    setFiltered(list);
+  }, [search, filter, products]);
+
+  async function loadData() {
+    setLoading(true);
+    const { data: m } = await supabase.from("merchants").select("*").eq("id", merchantId).single();
+    if (m) setMerchant(m);
+    const { data: p } = await supabase.from("products").select("*").eq("merchant_id", merchantId).order("score_total", { ascending: true });
+    if (p) { setProducts(p); setFiltered(p); }
+    setLoading(false);
+  }
+
+  async function syncProducts() {
+    setSyncing(true); setSyncMsg("جاري المزامنة...");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-products`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchant_id: merchantId }),
+      });
+      const data = await res.json();
+      setSyncMsg(data.success ? `✅ تمت مزامنة ${data.synced} منتج` : "❌ فشلت المزامنة");
+      if (data.success) await loadData();
+    } catch { setSyncMsg("❌ خطأ في الاتصال"); }
+    setSyncing(false);
+    setTimeout(() => setSyncMsg(""), 5000);
+  }
+
+  // ── Stats ──
+  const total = products.length;
+  const attention = products.filter(p => p.needs_attention).length;
+  const excellent = products.filter(p => p.score_total >= 80).length;
+  const avgScore = total ? Math.round(products.reduce((s, p) => s + p.score_total, 0) / total) : 0;
+
+  // ── No merchant_id ──
+  if (!merchantId) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#060a12" }}>
+      <style>{fontStyle}</style>
+      <div style={{ textAlign: "center", padding: "48px 40px", background: "#0a1120", border: "1px solid #1e3a5f", borderRadius: 20, maxWidth: 380 }}>
+        <div style={{ fontSize: 42, marginBottom: 16 }}>🔗</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: "#10b981", marginBottom: 8, fontFamily: "IBM Plex Sans Arabic" }}>محسِّن</div>
+        <div style={{ fontSize: 14, color: "#475569", marginBottom: 28, lineHeight: 1.7 }}>
+          اربط متجرك لتبدأ في تحليل منتجاتك وتحسين مبيعاتك بالذكاء الاصطناعي
+        </div>
+        <button style={S.primaryBtn} onClick={() => window.location.href = `${SUPABASE_URL}/functions/v1/salla-oauth/initiate`}>
+          ربط متجر سلة
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Loading ──
+  if (loading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#060a12", flexDirection: "column", gap: 16 }}>
+      <style>{fontStyle}</style>
+      <div style={{ width: 36, height: 36, border: "3px solid #0f2035", borderTopColor: "#10b981", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ fontSize: 13, color: "#475569" }}>جاري تحميل البيانات...</div>
+    </div>
+  );
+
+  // ── Main ──
+  return (
+    <div dir="rtl" style={{ display: "flex", minHeight: "100vh", background: "#060a12", fontFamily: "IBM Plex Sans Arabic, sans-serif" }}>
+      <style>{fontStyle}</style>
+
+      {/* ── Sidebar ── */}
+      <aside style={{
+        width: 220, background: "#08101e", borderLeft: "1px solid #0f2035",
+        display: "flex", flexDirection: "column", padding: "24px 14px",
+        position: "sticky", top: 0, height: "100vh", overflowY: "auto",
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#10b981", letterSpacing: "-0.5px" }}>محسِّن</div>
+          <div style={{ fontSize: 10, color: "#1e3a5f", letterSpacing: "0.15em", textTransform: "uppercase", marginTop: 2 }}>AI Commerce Intelligence</div>
+        </div>
+
+        {/* Store Info */}
+        {merchant && (
+          <div style={{ padding: "12px 10px", background: "#0d1421", borderRadius: 10, marginBottom: 20, textAlign: "center" }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%", margin: "0 auto 8px",
+              background: "linear-gradient(135deg, #10b981, #3b82f6)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 15, fontWeight: 700, color: "#060a12",
+            }}>{merchant.store_name?.[0] ?? "م"}</div>
+            <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>{merchant.store_name}</div>
+            <div style={{ fontSize: 10, color: "#1e3a5f", marginTop: 2 }}>{merchant.store_domain || "سلة"}</div>
           </div>
         )}
 
-        {product.analysis_json?.suggestions?.description && (
-          <div style={{ marginBottom: "20px" }}>
-            <h4 style={{ fontSize: "14px", color: "#00d4aa", marginBottom: "10px", fontWeight: "600" }}>
-              📝 الوصف المقترح
-            </h4>
-            <div style={styles.suggestionBox}>{product.analysis_json.suggestions.description}</div>
+        {/* Nav */}
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+          {[
+            { k: "overview", icon: "⬡", label: "نظرة عامة" },
+            { k: "products", icon: "◫", label: "المنتجات" },
+            { k: "analytics", icon: "◈", label: "التحليلات" },
+            { k: "settings", icon: "◎", label: "الإعدادات" },
+          ].map(item => (
+            <button key={item.k} onClick={() => setActiveNav(item.k as any)} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
+              borderRadius: 8, border: "none", cursor: "pointer",
+              background: activeNav === item.k ? "#10b98115" : "transparent",
+              color: activeNav === item.k ? "#10b981" : "#475569",
+              fontSize: 13, fontFamily: "IBM Plex Sans Arabic, sans-serif",
+              fontWeight: activeNav === item.k ? 600 : 400,
+              transition: "all 0.15s", textAlign: "right", width: "100%",
+            }}>
+              <span style={{ fontSize: 16, opacity: 0.8 }}>{item.icon}</span>
+              <span>{item.label}</span>
+              {item.k === "products" && attention > 0 && (
+                <span style={{ marginRight: "auto", background: "#ef444420", color: "#ef4444", fontSize: 10, padding: "1px 6px", borderRadius: 10 }}>{attention}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Sync */}
+        <div style={{ marginTop: 16, borderTop: "1px solid #0f2035", paddingTop: 14 }}>
+          <button onClick={syncProducts} disabled={syncing} style={{
+            width: "100%", padding: "9px 12px", borderRadius: 8,
+            border: "1px solid #1e3a5f", background: "transparent",
+            color: syncing ? "#475569" : "#64748b", cursor: syncing ? "not-allowed" : "pointer",
+            fontSize: 12, fontFamily: "IBM Plex Sans Arabic, sans-serif",
+            display: "flex", alignItems: "center", gap: 6, justifyContent: "center",
+          }}>
+            <span style={{ animation: syncing ? "spin 1s linear infinite" : "none", display: "inline-block" }}>↻</span>
+            {syncing ? "جاري المزامنة..." : "مزامنة المنتجات"}
+          </button>
+          {syncMsg && <div style={{ fontSize: 11, color: "#475569", textAlign: "center", marginTop: 6 }}>{syncMsg}</div>}
+        </div>
+      </aside>
+
+      {/* ── Main Content ── */}
+      <main style={{ flex: 1, padding: "32px 28px", overflowY: "auto" }}>
+
+        {/* ══ Overview ══ */}
+        {activeNav === "overview" && (
+          <div style={{ animation: "fadeUp 0.4s ease" }}>
+            <div style={{ marginBottom: 28 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0" }}>
+                مرحباً{merchant?.store_name ? `، ${merchant.store_name}` : ""} 👋
+              </h1>
+              <p style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
+                هذه نظرة شاملة على أداء متجرك
+              </p>
+            </div>
+
+            {/* KPI Row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: 12, marginBottom: 24 }}>
+              {[
+                { label: "إجمالي المنتجات", val: total, icon: "📦", color: "#3b82f6" },
+                { label: "متوسط الدرجة", val: `${avgScore}/100`, icon: "⭐", color: "#f59e0b" },
+                { label: "تحتاج اهتمام", val: attention, icon: "⚠", color: "#ef4444" },
+                { label: "درجة ممتازة", val: excellent, icon: "✅", color: "#10b981" },
+              ].map((stat, i) => (
+                <div key={i} style={{ ...S.card, textAlign: "center", padding: "18px 12px", borderColor: `${stat.color}22`, animation: `fadeUp ${0.1 + i * 0.08}s ease` }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>{stat.icon}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: stat.color, fontFamily: "JetBrains Mono, monospace" }}>{stat.val}</div>
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{stat.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Store Score */}
+            {total > 0 && <StoreScoreCard products={products} />}
+
+            {/* Needs attention */}
+            {attention > 0 && (
+              <div style={{ ...S.card, marginTop: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>⚠ منتجات تحتاج اهتمام فوري</div>
+                  <button onClick={() => setActiveNav("products")} style={{ fontSize: 12, color: "#10b981", background: "none", border: "none", cursor: "pointer" }}>
+                    عرض الكل ←
+                  </button>
+                </div>
+                {products.filter(p => p.needs_attention).slice(0, 4).map(p => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid #0f2035" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 6, background: "#0d1421", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, overflow: "hidden", flexShrink: 0 }}>
+                      {p.main_image ? <img src={p.main_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📦"}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                    </div>
+                    <ScoreArc score={p.score_total} size={40} />
+                    <button onClick={() => setOptimizerProduct(p)} style={{ ...S.primaryBtn, padding: "5px 10px", fontSize: 11 }}>
+                      تحسين
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {total === 0 && (
+              <div style={{ ...S.card, textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
+                <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 6 }}>لا توجد منتجات بعد</div>
+                <div style={{ fontSize: 13, color: "#475569", marginBottom: 24 }}>اضغط على مزامنة المنتجات لجلب منتجاتك من سلة</div>
+                <button onClick={syncProducts} disabled={syncing} style={S.primaryBtn}>
+                  {syncing ? "⏳ جاري المزامنة..." : "🔄 مزامنة المنتجات الآن"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {product.analysis_json?.keywords && product.analysis_json.keywords.length > 0 && (
-          <div style={{ marginBottom: "24px" }}>
-            <h4 style={{ fontSize: "14px", color: "#3b82f6", marginBottom: "10px", fontWeight: "600" }}>
-              🔑 الكلمات المفتاحية
-            </h4>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {product.analysis_json.keywords.map((kw, i) => (
-                <span key={i} style={styles.kwBadge}>{kw}</span>
+        {/* ══ Products ══ */}
+        {activeNav === "products" && (
+          <div style={{ animation: "fadeUp 0.4s ease" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0", marginBottom: 6 }}>المنتجات</h1>
+            <p style={{ fontSize: 13, color: "#475569", marginBottom: 22 }}>تقييمات جودة المنتجات وأداء محرك البحث</p>
+
+            {/* Toolbar */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="🔍  ابحث عن منتج..."
+                style={{ flex: 1, minWidth: 200, padding: "9px 14px", background: "#0a1120", border: "1px solid #0f2035", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontFamily: "IBM Plex Sans Arabic, sans-serif" }}
+              />
+              <div style={{ display: "flex", gap: 4, background: "#08101e", padding: 3, borderRadius: 8, border: "1px solid #0f2035" }}>
+                {[{ k: "all", l: `الكل (${total})` }, { k: "attention", l: `⚠ تحتاج اهتمام (${attention})` }, { k: "good", l: `✅ جيدة (${total - attention})` }].map(t => (
+                  <button key={t.k} onClick={() => setFilter(t.k as any)} style={{
+                    padding: "6px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12,
+                    background: filter === t.k ? "#10b98120" : "transparent",
+                    color: filter === t.k ? "#10b981" : "#475569",
+                    fontFamily: "IBM Plex Sans Arabic, sans-serif",
+                  }}>{t.l}</button>
+                ))}
+              </div>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div style={{ ...S.card, textAlign: "center", padding: "48px 20px" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🔍</div>
+                <div style={{ color: "#475569" }}>{products.length === 0 ? "لا توجد منتجات — اضغط مزامنة" : "لا توجد نتائج للبحث"}</div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+                {filtered.map((p, i) => (
+                  <div key={p.id} style={{ animation: `fadeUp ${0.05 + i * 0.04}s ease` }}>
+                    <ProductCard product={p} onOptimize={setOptimizerProduct} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ Analytics ══ */}
+        {activeNav === "analytics" && (
+          <div style={{ animation: "fadeUp 0.4s ease" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0", marginBottom: 6 }}>التحليلات</h1>
+            <p style={{ fontSize: 13, color: "#475569", marginBottom: 22 }}>توزيع درجات الجودة وأداء المنتجات</p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {/* Distribution */}
+              <div style={{ ...S.card, gridColumn: "1 / -1" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>توزيع درجات الجودة</div>
+                {[
+                  { label: "ممتاز (80-100)", count: products.filter(p => p.score_total >= 80).length, color: "#10b981", grade: "A" },
+                  { label: "جيد (60-79)", count: products.filter(p => p.score_total >= 60 && p.score_total < 80).length, color: "#3b82f6", grade: "B" },
+                  { label: "مقبول (40-59)", count: products.filter(p => p.score_total >= 40 && p.score_total < 60).length, color: "#f59e0b", grade: "C" },
+                  { label: "ضعيف (0-39)", count: products.filter(p => p.score_total < 40).length, color: "#ef4444", grade: "D" },
+                ].map(item => (
+                  <div key={item.label} style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: item.color, fontFamily: "JetBrains Mono", width: 16 }}>{item.grade}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: "#475569" }}>{item.label}</span>
+                        <span style={{ fontSize: 12, color: item.color, fontFamily: "JetBrains Mono", fontWeight: 600 }}>{item.count} منتج</span>
+                      </div>
+                      <div style={{ height: 6, background: "#0d1421", borderRadius: 3 }}>
+                        <div style={{ height: "100%", width: total ? `${(item.count / total) * 100}%` : "0%", background: item.color, borderRadius: 3, transition: "width 0.8s ease" }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Averages */}
+              {[
+                { label: "متوسط الدرجة الكلية", val: avgScore, desc: "القيمة المتوسطة لدرجة جودة جميع منتجاتك" },
+                { label: "أعلى درجة", val: total ? Math.max(...products.map(p => p.score_total)) : 0, desc: "أفضل منتج من حيث الجودة" },
+                { label: "أدنى درجة", val: total ? Math.min(...products.map(p => p.score_total)) : 0, desc: "المنتج الأكثر حاجة للتحسين" },
+                { label: "معدل التميز", val: total ? Math.round((excellent / total) * 100) : 0, desc: "نسبة المنتجات ذات الدرجة الممتازة" },
+              ].map((item, i) => (
+                <div key={i} style={S.card}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor(item.val), fontFamily: "JetBrains Mono" }}>{item.val}{i === 3 ? "%" : ""}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#94a3b8", margin: "6px 0 4px" }}>{item.label}</div>
+                  <div style={{ fontSize: 11, color: "#475569" }}>{item.desc}</div>
+                </div>
               ))}
             </div>
           </div>
         )}
 
-        <button onClick={applyOptimization} disabled={applying}
-          style={{ ...styles.btnPrimary, width: "100%", justifyContent: "center",
-            opacity: applying ? 0.7 : 1 }}>
-          {applying ? "⏳ جاري التطبيق..." : "✨ تطبيق التحسينات"}
-        </button>
-      </div>
-    </div>
-  );
-}
+        {/* ══ Settings ══ */}
+        {activeNav === "settings" && (
+          <div style={{ animation: "fadeUp 0.4s ease" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0", marginBottom: 6 }}>الإعدادات</h1>
+            <p style={{ fontSize: 13, color: "#475569", marginBottom: 22 }}>إعدادات المتجر والنظام</p>
 
-export default function MohsenDashboard() {
-  const [merchant, setMerchant] = useState<Merchant | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stats, setStats] = useState<MerchantStats | null>(null);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "needs_attention" | "optimized">("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-
-  const merchantId = new URLSearchParams(window.location.search).get("merchant_id");
-
-  const showToast = (msg: string, type: "success" | "error" = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const loadData = useCallback(async () => {
-    if (!merchantId) return;
-    setLoading(true);
-    try {
-      const { data: m } = await supabase.from("merchants")
-        .select("id, store_name, store_logo, plan, products_analyzed, monthly_limit")
-        .eq("id", merchantId).single();
-      if (m) setMerchant(m);
-
-      const { data: p } = await supabase.from("products").select("*")
-        .eq("merchant_id", merchantId).order("quick_score", { ascending: true });
-      if (p) setProducts(p);
-
-      const { data: s } = await supabase.rpc("get_merchant_stats", { p_merchant_id: merchantId });
-      if (s) setStats(s);
-    } finally {
-      setLoading(false);
-    }
-  }, [merchantId]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  const analyzeProduct = async (externalProductId: string) => {
-    setAnalyzing(externalProductId);
-    try {
-      const { data, error } = await supabase.functions.invoke("analyze-product", {
-        body: { merchant_id: merchantId, product_id: externalProductId },
-      });
-      if (error) throw error;
-      showToast(`تم التحليل — الدرجة: ${data.score}/100`);
-      await loadData();
-    } catch {
-      showToast("حدث خطأ أثناء التحليل", "error");
-    } finally {
-      setAnalyzing(null);
-    }
-  };
-
-  const filteredProducts = products.filter((p) => {
-    const matchSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!matchSearch) return false;
-    if (filter === "needs_attention") return p.quick_score < 40;
-    if (filter === "optimized") return p.is_optimized;
-    return true;
-  });
-
-  if (!merchantId) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.centerBox}>
-          <div style={{ fontSize: "64px", marginBottom: "16px" }}>🔗</div>
-          <h2 style={{ color: "#e8eaf0", fontFamily: "Tajawal, sans-serif",
-            fontSize: "28px", marginBottom: "12px", fontWeight: "800" }}>
-            ربط متجرك بـ محسِّن
-          </h2>
-          <p style={{ color: "#9ca3af", marginBottom: "32px", fontSize: "15px", lineHeight: "1.8" }}>
-            سجّل دخولك بمتجر سلة لتبدأ في تحليل منتجاتك وتحسين مبيعاتك
-          </p>
-          <button
-            onClick={() => {
-              window.location.href = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/salla-oauth/initiate`;
-            }}
-            style={styles.btnPrimary}>
-            ربط متجر سلة
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.centerBox}>
-          <div style={styles.spinner}/>
-          <p style={{ color: "#9ca3af", marginTop: "16px" }}>جاري تحميل بياناتك...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={styles.page} dir="rtl">
-      {toast && (
-        <div style={{
-          ...styles.toast,
-          background: toast.type === "success" ? "rgba(16,185,129,0.95)" : "rgba(239,68,68,0.95)"
-        }}>
-          {toast.type === "success" ? "✓" : "✗"} {toast.msg}
-        </div>
-      )}
-
-      <aside style={styles.sidebar}>
-        <div style={styles.logo}>
-          <span style={{ fontSize: "22px" }}>✦</span>
-          <span style={{ fontFamily: "Tajawal, sans-serif", fontWeight: "800", fontSize: "20px" }}>
-            محسِّن
-          </span>
-        </div>
-
-        {merchant && (
-          <div style={styles.storeCard}>
-            <div style={styles.storeLogoPlaceholder}>🏪</div>
-            <div>
-              <div style={{ fontSize: "14px", fontWeight: "600", color: "#e8eaf0" }}>
-                {merchant.store_name}
-              </div>
-              <div style={{
-                fontSize: "11px",
-                background: merchant.plan === "free" ? "rgba(107,114,128,0.2)" : "rgba(0,212,170,0.15)",
-                color: merchant.plan === "free" ? "#9ca3af" : "#00d4aa",
-                padding: "2px 8px", borderRadius: "100px", display: "inline-block", marginTop: "4px"
-              }}>
-                {merchant.plan === "free" ? "مجاني" : "Pro ✓"}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <nav style={styles.nav}>
-          {[
-            { icon: "📊", label: "لوحة التحكم" },
-            { icon: "📦", label: "المنتجات" },
-            { icon: "📈", label: "التحليلات" },
-            { icon: "⚙️", label: "الإعدادات" },
-          ].map((item, i) => (
-            <div key={item.label}
-              style={{ ...styles.navItem, ...(i === 0 ? styles.navItemActive : {}) }}>
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </div>
-          ))}
-        </nav>
-
-        {merchant?.plan === "free" && (
-          <div style={styles.upgradeBox}>
-            <div style={{ fontSize: "12px", color: "#f59e0b", fontWeight: "600", marginBottom: "6px" }}>
-              ⚡ الخطة المجانية
-            </div>
-            <div style={{ fontSize: "12px", color: "#9ca3af", marginBottom: "10px" }}>
-              {merchant.products_analyzed}/{merchant.monthly_limit} منتجات هذا الشهر
-            </div>
-            <div style={styles.usageBar}>
-              <div style={{
-                ...styles.usageFill,
-                width: `${Math.min((merchant.products_analyzed / merchant.monthly_limit) * 100, 100)}%`
-              }}/>
-            </div>
-            <button style={styles.btnUpgrade}>ترقية لـ Pro — 199 ريال/شهر</button>
-          </div>
-        )}
-      </aside>
-
-      <main style={styles.main}>
-        {stats && (
-          <div style={styles.statsRow}>
-            {[
-              { label: "إجمالي المنتجات", value: stats.total_products, icon: "📦", color: "#3b82f6" },
-              { label: "متوسط الدرجة", value: `${stats.avg_score || 0}/100`, icon: "⭐", color: "#f59e0b" },
-              { label: "تحتاج اهتمام", value: stats.needs_attention, icon: "⚠️", color: "#ef4444" },
-              { label: "تم تحسينها", value: stats.optimized_count, icon: "✅", color: "#10b981" },
-            ].map((s) => (
-              <div key={s.label} style={styles.statCard}>
-                <div style={{ fontSize: "28px", marginBottom: "8px" }}>{s.icon}</div>
-                <div style={{ fontSize: "28px", fontWeight: "800", color: s.color,
-                  fontFamily: "Tajawal, sans-serif" }}>
-                  {s.value}
-                </div>
-                <div style={{ fontSize: "13px", color: "#9ca3af" }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={styles.productsHeader}>
-          <h2 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "Tajawal, sans-serif" }}>
-            المنتجات وتقييمات الجودة
-          </h2>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <input placeholder="🔍 ابحث عن منتج..." value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)} style={styles.searchInput}/>
-            <select value={filter} onChange={(e) => setFilter(e.target.value as "all" | "needs_attention" | "optimized")}
-              style={styles.select}>
-              <option value="all">جميع المنتجات</option>
-              <option value="needs_attention">تحتاج اهتمام</option>
-              <option value="optimized">تم تحسينها</option>
-            </select>
-          </div>
-        </div>
-
-        {filteredProducts.length === 0 ? (
-          <div style={styles.emptyState}>
-            <div style={{ fontSize: "48px", marginBottom: "16px" }}>📭</div>
-            <h3 style={{ color: "#e8eaf0", marginBottom: "8px", fontFamily: "Tajawal, sans-serif" }}>
-              لا توجد منتجات بعد
-            </h3>
-            <p style={{ color: "#9ca3af", fontSize: "14px" }}>
-              ستظهر منتجاتك هنا بعد مزامنة متجرك
-            </p>
-          </div>
-        ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  {["المنتج", "الدرجة", "العنوان", "الوصف", "الصور", "السعر", "الحالة", ""].map((h) => (
-                    <th key={h} style={styles.th}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.map((product) => (
-                  <tr key={product.id} style={styles.tr}>
-                    <td style={styles.td}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={styles.productThumbPlaceholder}>🖼️</div>
-                        <div>
-                          <div style={{ fontSize: "14px", fontWeight: "500", color: "#e8eaf0",
-                            maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis",
-                            whiteSpace: "nowrap" }}>
-                            {product.name || "منتج بلا اسم"}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#6b7280" }}>{product.price} ريال</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      {product.last_analyzed ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <ScoreRing score={product.quick_score} size={48}/>
-                          <div style={{ fontSize: "11px", color: getScoreColor(product.quick_score),
-                            fontWeight: "600" }}>
-                            {getGradeLabel(product.score_grade)}
-                          </div>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: "12px", color: "#6b7280" }}>لم يُحلَّل</span>
-                      )}
-                    </td>
-                    <td style={styles.td}><ScorePill value={product.score_title} max={25}/></td>
-                    <td style={styles.td}><ScorePill value={product.score_description} max={25}/></td>
-                    <td style={styles.td}><ScorePill value={product.score_images} max={25}/></td>
-                    <td style={styles.td}><ScorePill value={product.score_pricing} max={25}/></td>
-                    <td style={styles.td}>
-                      {product.is_optimized
-                        ? <span style={{ ...styles.badge, background: "rgba(16,185,129,0.1)", color: "#10b981" }}>✓ محسَّن</span>
-                        : product.last_analyzed
-                          ? <span style={{ ...styles.badge, background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>بحاجة تحسين</span>
-                          : <span style={{ ...styles.badge, background: "rgba(107,114,128,0.1)", color: "#9ca3af" }}>جديد</span>
-                      }
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button onClick={() => analyzeProduct(product.external_product_id)}
-                          disabled={analyzing === product.external_product_id}
-                          style={{ ...styles.btnSm,
-                            opacity: analyzing === product.external_product_id ? 0.6 : 1 }}>
-                          {analyzing === product.external_product_id ? "⏳" : "🔍"} تحليل
-                        </button>
-                        {product.last_analyzed && !product.is_optimized && (
-                          <button onClick={() => setSelectedProduct(product)}
-                            style={{ ...styles.btnSm, background: "rgba(0,212,170,0.1)",
-                              color: "#00d4aa" }}>
-                            ✨ تحسين
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={S.card}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 16 }}>معلومات المتجر</div>
+                {[
+                  { label: "اسم المتجر", val: merchant?.store_name || "—" },
+                  { label: "النطاق", val: merchant?.store_domain || "—" },
+                  { label: "المعرِّف", val: merchantId || "—" },
+                  { label: "آخر مزامنة", val: products[0]?.last_synced_at ? new Date((products[0] as any).last_synced_at).toLocaleString("ar-SA") : "لم تتم بعد" },
+                ].map(row => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #0f2035", gap: 12 }}>
+                    <span style={{ fontSize: 13, color: "#475569" }}>{row.label}</span>
+                    <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "JetBrains Mono, monospace", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 240 }}>{row.val}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              <div style={S.card}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>مزامنة المنتجات</div>
+                <div style={{ fontSize: 13, color: "#475569", marginBottom: 16 }}>جلب أحدث بيانات المنتجات من متجر سلة</div>
+                <button onClick={syncProducts} disabled={syncing} style={{ ...S.primaryBtn, width: "auto" }}>
+                  {syncing ? "⏳ جاري المزامنة..." : "🔄 مزامنة الآن"}
+                </button>
+                {syncMsg && <div style={{ fontSize: 12, color: "#10b981", marginTop: 10 }}>{syncMsg}</div>}
+              </div>
+            </div>
           </div>
         )}
       </main>
 
-      {selectedProduct && (
-        <ProductModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          onOptimized={() => {
-            loadData();
-            setSelectedProduct(null);
-            showToast("تم تطبيق التحسينات بنجاح ✨");
-          }}
-          merchantId={merchantId}
+      {/* ── AI Optimizer Modal ── */}
+      {optimizerProduct && (
+        <AIOptimizerPanel
+          product={optimizerProduct}
+          merchantId={merchantId!}
+          onClose={() => setOptimizerProduct(null)}
         />
       )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: { display: "flex", minHeight: "100vh", background: "#0a0c10", color: "#e8eaf0",
-    fontFamily: "'IBM Plex Sans Arabic', 'Tajawal', sans-serif", fontSize: "14px" },
-  centerBox: { margin: "auto", textAlign: "center", padding: "40px", maxWidth: "440px" },
-  spinner: { width: "40px", height: "40px", border: "3px solid #1e2430",
-    borderTop: "3px solid #00d4aa", borderRadius: "50%", margin: "0 auto",
-    animation: "spin 0.8s linear infinite" },
-  toast: { position: "fixed", top: "24px", left: "50%", transform: "translateX(-50%)",
-    padding: "12px 28px", borderRadius: "100px", color: "white", fontWeight: "600",
-    fontSize: "14px", zIndex: 9999, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" },
-  sidebar: { width: "240px", minHeight: "100vh", background: "#0d0f14",
-    borderLeft: "1px solid #1e2430", display: "flex", flexDirection: "column",
-    padding: "24px 16px", flexShrink: 0 },
-  logo: { display: "flex", alignItems: "center", gap: "10px", color: "#00d4aa",
-    fontWeight: "800", fontSize: "20px", marginBottom: "28px", paddingBottom: "20px",
-    borderBottom: "1px solid #1e2430" },
-  storeCard: { display: "flex", alignItems: "center", gap: "10px", background: "#111318",
-    borderRadius: "12px", padding: "12px", marginBottom: "24px", border: "1px solid #1e2430" },
-  storeLogoPlaceholder: { width: "36px", height: "36px", borderRadius: "8px",
-    background: "#1e2430", display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: "18px" },
-  nav: { flex: 1 },
-  navItem: { display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
-    borderRadius: "10px", cursor: "pointer", color: "#6b7280", fontSize: "14px",
-    marginBottom: "4px" },
-  navItemActive: { background: "rgba(0,212,170,0.08)", color: "#00d4aa", fontWeight: "600" },
-  upgradeBox: { background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.15)",
-    borderRadius: "12px", padding: "14px", marginTop: "auto" },
-  usageBar: { height: "4px", background: "#1e2430", borderRadius: "2px", overflow: "hidden",
-    marginBottom: "12px" },
-  usageFill: { height: "100%", background: "#f59e0b", borderRadius: "2px" },
-  btnUpgrade: { width: "100%", padding: "8px", background: "rgba(245,158,11,0.15)",
-    color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px",
-    cursor: "pointer", fontSize: "12px", fontWeight: "600", fontFamily: "inherit" },
-  main: { flex: 1, padding: "32px", overflow: "auto" },
-  statsRow: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px",
-    marginBottom: "28px" },
-  statCard: { background: "#111318", border: "1px solid #1e2430", borderRadius: "16px",
-    padding: "20px", textAlign: "center" },
-  productsHeader: { display: "flex", justifyContent: "space-between", alignItems: "center",
-    marginBottom: "16px", flexWrap: "wrap", gap: "12px" },
-  searchInput: { background: "#111318", border: "1px solid #1e2430", borderRadius: "8px",
-    padding: "8px 14px", color: "#e8eaf0", fontSize: "13px", outline: "none",
-    fontFamily: "inherit", width: "200px" },
-  select: { background: "#111318", border: "1px solid #1e2430", borderRadius: "8px",
-    padding: "8px 12px", color: "#e8eaf0", fontSize: "13px", outline: "none",
-    fontFamily: "inherit", cursor: "pointer" },
-  tableWrapper: { background: "#111318", border: "1px solid #1e2430", borderRadius: "16px",
-    overflow: "auto" },
-  table: { width: "100%", borderCollapse: "collapse" },
-  th: { textAlign: "right", padding: "12px 16px", fontSize: "11px", letterSpacing: "1px",
-    textTransform: "uppercase", color: "#6b7280", borderBottom: "1px solid #1e2430",
-    fontWeight: "500", background: "#0d0f14", whiteSpace: "nowrap" },
-  tr: { borderBottom: "1px solid #1e2430" },
-  td: { padding: "14px 16px", verticalAlign: "middle", whiteSpace: "nowrap" },
-  productThumbPlaceholder: { width: "40px", height: "40px", borderRadius: "8px",
-    background: "#1e2430", display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: "18px", flexShrink: 0 },
-  badge: { padding: "4px 10px", borderRadius: "100px", fontSize: "11px", fontWeight: "600" },
-  btnSm: { padding: "6px 12px", borderRadius: "8px", border: "1px solid #1e2430",
-    background: "#181c24", color: "#e8eaf0", fontSize: "12px", cursor: "pointer",
-    fontFamily: "inherit", fontWeight: "500", whiteSpace: "nowrap" },
-  btnPrimary: { display: "inline-flex", alignItems: "center", gap: "8px",
-    padding: "12px 28px", background: "#00d4aa", color: "#000", border: "none",
-    borderRadius: "10px", cursor: "pointer", fontSize: "15px", fontWeight: "700",
-    fontFamily: "Tajawal, sans-serif" },
-  emptyState: { textAlign: "center", padding: "60px", background: "#111318",
-    borderRadius: "16px", border: "1px solid #1e2430" },
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-    backdropFilter: "blur(4px)", display: "flex", alignItems: "center",
-    justifyContent: "center", zIndex: 1000, padding: "20px" },
-  modal: { background: "#111318", border: "1px solid #1e2430", borderRadius: "20px",
-    padding: "28px", maxWidth: "540px", width: "100%", maxHeight: "85vh", overflow: "auto" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center",
-    marginBottom: "20px" },
-  closeBtn: { background: "none", border: "none", color: "#6b7280", cursor: "pointer",
-    fontSize: "18px", padding: "4px 8px" },
-  issuePill: { display: "inline-block", background: "rgba(239,68,68,0.08)",
-    border: "1px solid rgba(239,68,68,0.15)", color: "#fca5a5", padding: "5px 12px",
-    borderRadius: "100px", fontSize: "12px", marginLeft: "6px", marginBottom: "6px" },
-  suggestionBox: { background: "rgba(0,212,170,0.05)", border: "1px solid rgba(0,212,170,0.15)",
-    borderRadius: "10px", padding: "14px", fontSize: "14px", color: "#d1fae5",
-    lineHeight: "1.8" },
-  kwBadge: { background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)",
-    color: "#93c5fd", padding: "4px 10px", borderRadius: "100px", fontSize: "12px" },
+// ─── Shared Styles ─────────────────────────────────────────────────────────────
+const S: Record<string, any> = {
+  card: {
+    background: "#0a1120", border: "1px solid #0f2035",
+    borderRadius: 12, padding: 20,
+    transition: "border-color 0.2s, transform 0.2s",
+  },
+  miniStat: {
+    padding: "12px 16px", background: "#060a12",
+    border: "1px solid #0f2035", borderRadius: 8,
+  },
+  tag: {
+    padding: "2px 8px", background: "#0f2035",
+    borderRadius: 4, fontSize: 11, color: "#475569",
+  },
+  primaryBtn: {
+    padding: "10px 20px", borderRadius: 8,
+    border: "none", background: "linear-gradient(135deg, #10b981, #059669)",
+    color: "#fff", fontWeight: 700, fontSize: 13,
+    cursor: "pointer", fontFamily: "IBM Plex Sans Arabic, sans-serif",
+    transition: "opacity 0.15s", width: "100%", textAlign: "center",
+  },
+  secondaryBtn: {
+    padding: "10px 16px", borderRadius: 8,
+    border: "1px solid #1e3a5f", background: "transparent",
+    color: "#64748b", fontSize: 13, cursor: "pointer",
+    fontFamily: "IBM Plex Sans Arabic, sans-serif",
+    transition: "all 0.15s",
+  },
 };

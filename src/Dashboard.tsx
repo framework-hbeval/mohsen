@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://dcchprqwjfblcypsaggz.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JFDcUV-OcYLsBNdzr9JmFw_jeYLjzzD";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface Merchant {
   id: string; store_id: string; store_name: string;
   store_domain: string; store_logo: string; store_email: string;
@@ -25,260 +24,347 @@ interface AIResult {
   score_estimate: number; tips: string[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const C = (s: number) => s >= 80 ? "#00d4a8" : s >= 60 ? "#f5a623" : s >= 40 ? "#ff6b35" : "#ff3b5c";
 const G = (s: number) => s >= 80 ? "A" : s >= 60 ? "B" : s >= 40 ? "C" : "D";
 const L = (s: number) => s >= 80 ? "ممتاز" : s >= 60 ? "جيد" : s >= 40 ? "مقبول" : "ضعيف";
 const fmt = (p: number, c: string) => `${p.toLocaleString("ar-SA")} ${c === "SAR" ? "ر.س" : c}`;
 const strip = (h: string) => h?.replace(/<[^>]*>/g, "").trim() || "";
 
-// ─── CSS ─────────────────────────────────────────────────────────────────────
+// ─── CSS المتجاوب الكامل ──────────────────────────────────────────────────────
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=Space+Mono:wght@400;700&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #03070f;
-  --surface: #080f1c;
-  --surface2: #0c1628;
-  --border: #0e1e35;
-  --border2: #162840;
-  --text: #e8f4f8;
-  --text2: #7a9ab5;
-  --text3: #3d5a73;
-  --accent: #00d4a8;
-  --accent2: #0099cc;
-  --warn: #f5a623;
-  --danger: #ff3b5c;
-  --mono: 'Space Mono', monospace;
-  --sans: 'Tajawal', sans-serif;
+  --bg: #03070f; --surface: #080f1c; --surface2: #0c1628;
+  --border: #0e1e35; --border2: #162840;
+  --text: #e8f4f8; --text2: #7a9ab5; --text3: #3d5a73;
+  --accent: #00d4a8; --accent2: #0099cc;
+  --warn: #f5a623; --danger: #ff3b5c;
+  --sans: 'Tajawal', sans-serif; --mono: 'Space Mono', monospace;
+  --nav-h: 64px; --sidebar-w: 220px;
 }
-body { background: var(--bg); font-family: var(--sans); color: var(--text); overflow-x: hidden; }
-::-webkit-scrollbar { width: 3px; height: 3px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+html, body { background: var(--bg); font-family: var(--sans); color: var(--text); overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-@keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
 @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
 @keyframes spin { to { transform:rotate(360deg); } }
-@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
-@keyframes glow { 0%,100% { box-shadow: 0 0 8px #00d4a820; } 50% { box-shadow: 0 0 24px #00d4a845; } }
-@keyframes scanline { 0% { top: -10%; } 100% { top: 110%; } }
+@keyframes slideUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
 
-.fade-up { animation: fadeUp .45s cubic-bezier(.2,0,.2,1) both; }
-.fade-in { animation: fadeIn .3s ease both; }
+.fu { animation: fadeUp .4s cubic-bezier(.2,0,.2,1) both; }
+.fi { animation: fadeIn .25s ease both; }
 
-.nav-btn { transition: all .15s ease; }
-.nav-btn:hover { background: rgba(0,212,168,.06) !important; color: #00d4a8 !important; }
-.nav-btn.active { background: rgba(0,212,168,.1) !important; color: #00d4a8 !important; border-right: 2px solid #00d4a8 !important; }
+/* ── Layout ── */
+.app { display: flex; min-height: 100vh; min-height: 100dvh; direction: rtl; }
 
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; transition: border-color .2s, transform .2s; }
-.card:hover { border-color: var(--border2); }
-.card-lift:hover { transform: translateY(-2px); border-color: rgba(0,212,168,.2) !important; }
+/* Sidebar — Desktop */
+.sidebar {
+  width: var(--sidebar-w); background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: fixed; top: 0; right: 0;
+  height: 100vh; height: 100dvh;
+  z-index: 100; overflow-y: auto;
+  padding: 20px 10px;
+  transition: transform .3s ease;
+}
+.main {
+  flex: 1; margin-right: var(--sidebar-w);
+  padding: 28px 24px 100px;
+  min-height: 100vh; overflow-x: hidden;
+}
 
+/* Bottom Nav — Mobile */
+.bottom-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--nav-h); z-index: 200;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 0 8px;
+  align-items: center; justify-content: space-around;
+  backdrop-filter: blur(12px);
+}
+.bottom-nav-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; flex: 1; padding: 8px 4px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text3); transition: color .2s;
+  font-family: var(--sans); position: relative;
+}
+.bottom-nav-btn.active { color: var(--accent); }
+.bottom-nav-btn .nav-icon { font-size: 20px; line-height: 1; }
+.bottom-nav-btn .nav-label { font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+.bottom-nav-btn .nav-badge {
+  position: absolute; top: 4px; right: calc(50% - 14px);
+  background: var(--danger); color: #fff;
+  font-size: 9px; font-weight: 800; font-family: var(--mono);
+  padding: 1px 5px; border-radius: 10px; min-width: 16px; text-align: center;
+}
+
+/* Mobile Header */
+.mobile-header {
+  display: none;
+  position: sticky; top: 0; z-index: 50;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  align-items: center; justify-content: space-between;
+}
+.mobile-header .logo { font-size: 20px; font-weight: 900; color: var(--accent); }
+.mobile-header .store-badge {
+  font-size: 12px; color: var(--text2); font-weight: 600;
+  background: var(--surface2); padding: 5px 12px;
+  border-radius: 20px; border: 1px solid var(--border);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { display: none !important; }
+  .bottom-nav { display: flex; }
+  .mobile-header { display: flex; }
+  .main { margin-right: 0; padding: 16px 14px 80px; }
+}
+
+/* ── Cards ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+.card-sm { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.card-accent { border-color: rgba(0,212,168,.2); }
+
+/* ── Buttons ── */
 .btn-primary {
   background: linear-gradient(135deg, #00d4a8, #0099cc);
   color: #03070f; border: none; border-radius: 10px;
   font-family: var(--sans); font-weight: 800; font-size: 14px;
-  cursor: pointer; transition: all .2s; padding: 11px 22px;
-  letter-spacing: .02em;
+  cursor: pointer; padding: 10px 18px; transition: all .2s;
+  white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
 }
-.btn-primary:hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,212,168,.25); }
-.btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn-primary:hover { opacity: .88; box-shadow: 0 6px 20px rgba(0,212,168,.3); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary-full { width: 100%; justify-content: center; padding: 13px; font-size: 15px; }
 
 .btn-ghost {
   background: transparent; color: var(--text2);
   border: 1px solid var(--border2); border-radius: 10px;
   font-family: var(--sans); font-size: 13px; cursor: pointer;
-  transition: all .2s; padding: 10px 18px;
+  padding: 9px 16px; transition: all .2s; white-space: nowrap;
 }
-.btn-ghost:hover { color: var(--text); border-color: var(--text3); background: var(--surface2); }
+.btn-ghost:hover { color: var(--text); border-color: var(--text3); }
+.btn-ghost:disabled { opacity: .4; cursor: not-allowed; }
 
+.btn-icon {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text2); cursor: pointer;
+  padding: 9px 12px; font-size: 16px; transition: all .2s;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn-icon:hover { color: var(--text); border-color: var(--border2); }
+
+/* ── Nav Sidebar ── */
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  border: none; border-right: 2px solid transparent;
+  cursor: pointer; font-family: var(--sans); font-size: 13px;
+  font-weight: 600; width: 100%; text-align: right;
+  color: var(--text3); background: transparent;
+  transition: all .15s; margin-bottom: 2px;
+}
+.nav-item:hover { background: rgba(0,212,168,.05); color: var(--text2); }
+.nav-item.active { background: rgba(0,212,168,.1); color: var(--accent); border-right-color: var(--accent); }
+.nav-item .ni-icon { font-size: 17px; opacity: .8; }
+.nav-item .ni-badge {
+  margin-right: auto; background: rgba(255,59,92,.15);
+  color: var(--danger); font-size: 10px; font-family: var(--mono);
+  padding: 1px 7px; border-radius: 10px; font-weight: 700;
+}
+
+/* ── Input ── */
 .input {
-  background: var(--surface); border: 1px solid var(--border);
+  background: var(--surface2); border: 1px solid var(--border);
   border-radius: 10px; color: var(--text); font-family: var(--sans);
-  font-size: 14px; padding: 10px 14px; transition: border-color .2s; width: 100%;
+  font-size: 14px; padding: 10px 14px; width: 100%; transition: border-color .2s;
 }
 .input:focus { outline: none; border-color: rgba(0,212,168,.4); }
 .input::placeholder { color: var(--text3); }
 
-.tag { display:inline-flex; align-items:center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+/* ── Tags ── */
+.tag { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.tag-default { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
+.tag-accent { background: rgba(0,212,168,.1); color: var(--accent); border: 1px solid rgba(0,212,168,.2); }
+.tag-warn { background: rgba(245,166,35,.1); color: var(--warn); border: 1px solid rgba(245,166,35,.2); }
+.tag-danger { background: rgba(255,59,92,.1); color: var(--danger); border: 1px solid rgba(255,59,92,.2); }
 
+/* ── Progress ── */
+.progress { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 2px; transition: width .9s cubic-bezier(.4,0,.2,1); }
+
+/* ── Tabs ── */
+.tabs { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 2px; }
+.tab { flex: 1; padding: 8px 6px; border-radius: 8px; border: none; cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 700; transition: all .2s; background: transparent; color: var(--text3); }
+.tab.active { background: var(--surface2); color: var(--accent); }
+
+/* ── Modal ── */
+.modal-bg { position: fixed; inset: 0; background: rgba(3,7,15,.88); backdrop-filter: blur(8px); display: flex; align-items: flex-end; justify-content: center; z-index: 500; padding: 0; animation: fadeIn .2s ease; }
+.modal-box { background: var(--surface); border: 1px solid var(--border2); border-radius: 20px 20px 0 0; width: 100%; max-height: 92vh; max-height: 92dvh; overflow-y: auto; animation: slideUp .3s cubic-bezier(.2,0,.2,1); }
+@media (min-width: 640px) {
+  .modal-bg { align-items: center; padding: 20px; }
+  .modal-box { border-radius: 20px; max-width: 680px; animation: fadeUp .3s ease; }
+}
+
+/* ── Grids ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+@media (max-width: 640px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-4 { grid-template-columns: repeat(2,1fr); }
+}
+
+/* ── Product Card ── */
+.product-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden; margin-bottom: 10px;
+  transition: border-color .2s;
+}
+.product-row:hover { border-color: var(--border2); }
+
+/* ── Stat Card ── */
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px;
+  position: relative; overflow: hidden;
+}
+.stat-card-glow { position: absolute; inset: 0; pointer-events: none; }
+
+/* ── Score Chip ── */
 .score-chip {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; border-radius: 50%;
-  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  border-radius: 50%; font-family: var(--mono); font-weight: 700;
   border: 2px solid; flex-shrink: 0;
 }
 
-.progress-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-.progress-fill { height: 100%; border-radius: 2px; transition: width .9s cubic-bezier(.4,0,.2,1); }
-
-.tab-bar { display: flex; background: var(--bg); border-radius: 10px; padding: 3px; gap: 2px; }
-.tab { flex: 1; padding: 8px; border-radius: 8px; border: none; cursor: pointer; font-family: var(--sans); font-size: 13px; font-weight: 600; transition: all .2s; background: transparent; color: var(--text3); }
-.tab.active { background: var(--surface2); color: var(--accent); }
-
-.modal-backdrop { position: fixed; inset: 0; background: rgba(3,7,15,.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; animation: fadeIn .2s ease; }
-.modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 20px; width: 100%; max-width: 700px; max-height: 90vh; overflow: auto; box-shadow: 0 40px 100px rgba(0,0,0,.7); }
-
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 18px; position: relative; overflow: hidden; }
-.stat-card::before { content:''; position:absolute; inset:0; background: radial-gradient(circle at 100% 0%, var(--accent-glow,rgba(0,212,168,.04)) 0%, transparent 60%); pointer-events:none; }
-
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-
-@media (max-width: 768px) {
-  .grid-4 { grid-template-columns: repeat(2, 1fr); }
-  .grid-3 { grid-template-columns: 1fr 1fr; }
-  .sidebar { width: 60px !important; }
-  .sidebar .label { display: none !important; }
-  .main-content { padding: 20px 16px !important; }
+/* ── Upgrade Banner ── */
+.upgrade-banner {
+  background: linear-gradient(135deg, rgba(0,212,168,.08), rgba(0,153,204,.05));
+  border: 1px solid rgba(0,212,168,.2); border-radius: 14px;
+  padding: 18px; display: flex; align-items: center;
+  gap: 14px; margin-bottom: 20px; flex-wrap: wrap;
 }
+
+/* ── Sync bar ── */
+.sync-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ── Spinner ── */
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+.spinner-lg { width: 40px; height: 40px; border-width: 3px; }
 `;
 
 // ─── Score Ring ───────────────────────────────────────────────────────────────
-function Ring({ score, size = 64 }: { score: number; size?: number }) {
-  const r = (size - 8) / 2;
-  const circ = 2 * Math.PI * r;
-  const arc = circ * 0.75;
-  const fill = arc * (score / 100);
-  const cx = size / 2, cy = size / 2;
-  const color = C(score);
+function Ring({ score, size = 56 }: { score: number; size?: number }) {
+  const r = (size - 8) / 2, circ = 2 * Math.PI * r;
+  const arc = circ * 0.75, fill = arc * (score / 100);
+  const cx = size / 2, cy = size / 2, color = C(score);
   return (
     <svg width={size} height={size} style={{ transform: "rotate(135deg)", flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#0e1e35" strokeWidth={7}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#0e1e35" strokeWidth={6}
         strokeDasharray={`${arc} ${circ - arc}`} strokeLinecap="round" />
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={7}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={6}
         strokeDasharray={`${fill} ${circ}`} strokeLinecap="round"
-        style={{ transition: "stroke-dasharray 1.2s cubic-bezier(.4,0,.2,1)", filter: `drop-shadow(0 0 6px ${color}60)` }} />
+        style={{ transition: "stroke-dasharray 1.1s cubic-bezier(.4,0,.2,1)", filter: `drop-shadow(0 0 4px ${color}60)` }} />
       <text x={cx} y={cy + (size > 80 ? 8 : 5)} textAnchor="middle" fill={color}
-        style={{ transform: `rotate(-135deg)`, transformOrigin: `${cx}px ${cy}px`,
-          fontSize: size > 80 ? 22 : 13, fontWeight: 700, fontFamily: "Space Mono, monospace" }}>
+        style={{ transform: `rotate(-135deg)`, transformOrigin: `${cx}px ${cy}px`, fontSize: size > 80 ? 20 : 12, fontWeight: 700, fontFamily: "Space Mono,monospace" }}>
         {score}
       </text>
     </svg>
   );
 }
 
-// ─── Score Bar ────────────────────────────────────────────────────────────────
+// ─── Progress Bar ─────────────────────────────────────────────────────────────
 function Bar({ label, value, icon }: { label: string; value: number; icon: string }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 15 }}>{icon}</span>{label}
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+        <span style={{ fontSize: 12, color: "var(--text2)", display: "flex", alignItems: "center", gap: 5 }}>
+          <span>{icon}</span>{label}
         </span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: C(value), fontWeight: 700 }}>
-          {value}%
-        </span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: C(value), fontWeight: 700 }}>{value}%</span>
       </div>
-      <div className="progress-bar">
-        <div className="progress-fill" style={{ width: `${value}%`, background: `linear-gradient(90deg, ${C(value)}66, ${C(value)})` }} />
+      <div className="progress">
+        <div className="progress-fill" style={{ width: `${value}%`, background: `linear-gradient(90deg,${C(value)}66,${C(value)})` }} />
       </div>
     </div>
   );
 }
 
-// ─── Overview Page ────────────────────────────────────────────────────────────
-function Overview({ products, merchant, onSync, syncing, syncMsg, onOptimize, onNav }:
-  { products: Product[]; merchant: Merchant | null; onSync: () => void; syncing: boolean; syncMsg: string; onOptimize: (p: Product) => void; onNav: (s: string) => void }) {
-
+// ─── Overview ─────────────────────────────────────────────────────────────────
+function Overview({ products, merchant, onSync, syncing, syncMsg, onOptimize, onNav, onUpgrade }:
+  any) {
   const total = products.length;
-  const attention = products.filter(p => p.needs_attention).length;
-  const excellent = products.filter(p => p.score_total >= 80).length;
-  const avgScore = total ? Math.round(products.reduce((s, p) => s + p.score_total, 0) / total) : 0;
-  const avgTitle = total ? Math.round(products.reduce((s, p) => s + p.score_title, 0) / total) : 0;
-  const avgImages = total ? Math.round(products.reduce((s, p) => s + p.score_images, 0) / total) : 0;
-  const avgDesc = total ? Math.round(products.reduce((s, p) => s + p.score_description, 0) / total) : 0;
-  const avgSeo = total ? Math.round(products.reduce((s, p) => s + p.score_seo, 0) / total) : 0;
-
-  const stats = [
-    { label: "إجمالي المنتجات", val: total, icon: "◈", color: "var(--accent2)" },
-    { label: "متوسط الجودة", val: `${avgScore}`, unit: "/100", icon: "◉", color: C(avgScore) },
-    { label: "تحتاج اهتمام", val: attention, icon: "△", color: "var(--warn)" },
-    { label: "درجة ممتازة", val: excellent, icon: "◆", color: "var(--accent)" },
-  ];
+  const attention = products.filter((p: Product) => p.needs_attention).length;
+  const excellent = products.filter((p: Product) => p.score_total >= 80).length;
+  const avgScore = total ? Math.round(products.reduce((s: number, p: Product) => s + p.score_total, 0) / total) : 0;
+  const avgTitle = total ? Math.round(products.reduce((s: number, p: Product) => s + p.score_title, 0) / total) : 0;
+  const avgImages = total ? Math.round(products.reduce((s: number, p: Product) => s + p.score_images, 0) / total) : 0;
+  const avgDesc = total ? Math.round(products.reduce((s: number, p: Product) => s + p.score_description, 0) / total) : 0;
+  const avgSeo = total ? Math.round(products.reduce((s: number, p: Product) => s + p.score_seo, 0) / total) : 0;
 
   return (
-    <div className="fade-up">
-      {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--text)", letterSpacing: "-.03em" }}>
-          مرحباً{merchant?.store_name ? `، ${merchant.store_name}` : ""} 
-          <span style={{ fontSize: 26 }}> 👋</span>
+    <div className="fu">
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>
+          مرحباً{merchant?.store_name ? `، ${merchant.store_name}` : ""} 👋
         </h1>
-        <p style={{ fontSize: 14, color: "var(--text2)", marginTop: 6 }}>
-          نظرة شاملة على أداء متجرك وجودة منتجاتك
-        </p>
+        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>نظرة شاملة على أداء متجرك</p>
       </div>
 
+      {/* Upgrade Banner */}
+      {merchant?.plan !== "pro" && (
+        <div className="upgrade-banner">
+          <div style={{ fontSize: 28 }}>⭐</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>جرّب محسِّن Pro</div>
+            <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>تحسين غير محدود بالذكاء الاصطناعي + تقارير متقدمة</div>
+          </div>
+          <button className="btn-primary" onClick={onUpgrade} style={{ fontSize: 13 }}>
+            ابدأ مجاناً →
+          </button>
+        </div>
+      )}
+
       {/* KPIs */}
-      <div className="grid-4" style={{ marginBottom: 20 }}>
-        {stats.map((s, i) => (
-          <div key={i} className="stat-card" style={{ ["--accent-glow" as any]: `${s.color}08`, animationDelay: `${i * .07}s` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 10 }}>
-                  {s.label}
-                </div>
-                <div style={{ fontSize: 34, fontWeight: 900, color: s.color, fontFamily: "var(--mono)", lineHeight: 1 }}>
-                  {s.val}<span style={{ fontSize: 16, opacity: .5 }}>{s.unit || ""}</span>
-                </div>
-              </div>
-              <div style={{ fontSize: 22, opacity: .3, color: s.color }}>{s.icon}</div>
-            </div>
+      <div className="grid-4" style={{ marginBottom: 16 }}>
+        {[
+          { l: "المنتجات", v: total, color: "var(--accent2)", icon: "📦" },
+          { l: "متوسط الجودة", v: `${avgScore}`, color: C(avgScore), icon: "⭐" },
+          { l: "تحتاج اهتمام", v: attention, color: "var(--warn)", icon: "⚠️" },
+          { l: "ممتازة", v: excellent, color: "var(--accent)", icon: "✅" },
+        ].map((s, i) => (
+          <div key={i} className="stat-card" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{s.icon}</div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: s.color, fontFamily: "var(--mono)", lineHeight: 1 }}>{s.v}</div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 5 }}>{s.l}</div>
           </div>
         ))}
       </div>
 
-      {/* Store Score Card */}
+      {/* Store Score */}
       {total > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 36, alignItems: "center" }}>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: "var(--text3)", letterSpacing: ".12em", textTransform: "uppercase", marginBottom: 14 }}>Store Score</div>
-              <Ring score={avgScore} size={130} />
-              <div style={{ marginTop: 12 }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 36, fontWeight: 700, color: C(avgScore) }}>{G(avgScore)}</span>
-                <div style={{ fontSize: 13, color: C(avgScore), marginTop: 4, fontWeight: 700 }}>{L(avgScore)}</div>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ textAlign: "center", minWidth: 110 }}>
+              <div style={{ fontSize: 10, color: "var(--text3)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 10 }}>Store Score</div>
+              <Ring score={avgScore} size={110} />
+              <div style={{ marginTop: 8 }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 30, fontWeight: 700, color: C(avgScore) }}>{G(avgScore)}</span>
+                <div style={{ fontSize: 12, color: C(avgScore), marginTop: 3, fontWeight: 700 }}>{L(avgScore)}</div>
               </div>
             </div>
-            <div>
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>تقييم جودة المتجر</div>
-                <div style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>بناءً على تحليل {total} منتج</div>
-              </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>تقييم جودة المتجر</div>
+              <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 14 }}>بناءً على {total} منتج</div>
               <Bar label="جودة العناوين" value={avgTitle} icon="✍️" />
               <Bar label="جودة الصور" value={avgImages} icon="🖼️" />
               <Bar label="جودة الوصف" value={avgDesc} icon="📝" />
               <Bar label="تحسين SEO" value={avgSeo} icon="🔍" />
-              {/* Tips */}
-              <div style={{ marginTop: 16, padding: "14px 16px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                {[
-                  { cond: avgTitle < 60, msg: "عناوين المنتجات قصيرة — استهدف 30-70 حرف لكل منتج" },
-                  { cond: avgImages < 60, msg: "الصور غير كافية — أضف 3 صور على الأقل لكل منتج" },
-                  { cond: avgDesc < 60, msg: "الوصف مختصر جداً — استهدف 100+ كلمة لكل منتج" },
-                  { cond: avgSeo < 60, msg: "ضعف في SEO — أضف كلمات مفتاحية في العناوين والأوصاف" },
-                ].filter(x => x.cond).length === 0 ? (
-                  <div style={{ fontSize: 13, color: "var(--accent)", display: "flex", gap: 8, alignItems: "center" }}>
-                    <span>✅</span> متجرك في حالة ممتازة — استمر في الحفاظ على الجودة
-                  </div>
-                ) : (
-                  [
-                    { cond: avgTitle < 60, msg: "عناوين المنتجات قصيرة — استهدف 30-70 حرف لكل منتج" },
-                    { cond: avgImages < 60, msg: "الصور غير كافية — أضف 3 صور على الأقل لكل منتج" },
-                    { cond: avgDesc < 60, msg: "الوصف مختصر جداً — استهدف 100+ كلمة لكل منتج" },
-                    { cond: avgSeo < 60, msg: "ضعف في SEO — أضف كلمات مفتاحية في العناوين والأوصاف" },
-                  ].filter(x => x.cond).map((issue, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "var(--warn)", display: "flex", gap: 8, alignItems: "flex-start", marginTop: i > 0 ? 8 : 0 }}>
-                      <span style={{ flexShrink: 0, marginTop: 1 }}>⚠</span>
-                      <span style={{ lineHeight: 1.5 }}>{issue.msg}</span>
-                    </div>
-                  ))
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -286,292 +372,193 @@ function Overview({ products, merchant, onSync, syncing, syncMsg, onOptimize, on
 
       {/* Needs Attention */}
       {attention > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>منتجات تحتاج اهتمام فوري</div>
-              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3 }}>{attention} منتج بدرجة أقل من 60</div>
-            </div>
-            <button className="btn-ghost" onClick={() => onNav("products")} style={{ fontSize: 12, padding: "7px 14px" }}>
-              عرض الكل ←
-            </button>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 14 }}>⚠️ تحتاج اهتمام فوري</div>
+            <button className="btn-ghost" onClick={() => onNav("products")} style={{ fontSize: 12, padding: "6px 12px" }}>الكل ←</button>
           </div>
-          {products.filter(p => p.needs_attention).slice(0, 5).map((p, i) => (
-            <div key={p.id} style={{
-              display: "flex", alignItems: "center", gap: 14, padding: "12px 0",
-              borderTop: i > 0 ? "1px solid var(--border)" : "none",
-            }}>
-              <div style={{ width: 40, height: 40, borderRadius: 8, background: "var(--surface2)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {p.main_image ? <img src={p.main_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 18 }}>📦</span>}
+          {products.filter((p: Product) => p.needs_attention).slice(0, 4).map((p: Product, i: number) => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 8, background: "var(--surface2)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.main_image ? <img src={p.main_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>📦</span>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                 <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>{fmt(p.price, p.currency)}</div>
               </div>
-              <Ring score={p.score_total} size={42} />
-              <button className="btn-primary" onClick={() => onOptimize(p)} style={{ fontSize: 12, padding: "7px 14px", whiteSpace: "nowrap" }}>
-                ✨ تحسين
-              </button>
+              <Ring score={p.score_total} size={40} />
+              <button className="btn-primary" onClick={() => onOptimize(p)} style={{ fontSize: 12, padding: "7px 12px" }}>✨</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Empty */}
       {total === 0 && (
-        <div className="card" style={{ textAlign: "center", padding: "72px 40px" }}>
-          <div style={{ fontSize: 56, marginBottom: 20 }}>📭</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>لا توجد منتجات بعد</div>
-          <div style={{ fontSize: 14, color: "var(--text2)", marginBottom: 28, lineHeight: 1.7, maxWidth: 380, margin: "0 auto 28px" }}>
-            اضغط على زر المزامنة لجلب منتجاتك من متجر سلة وبدء تحليلها بالذكاء الاصطناعي
-          </div>
-          <button className="btn-primary" onClick={onSync} disabled={syncing}>
-            {syncing ? "⏳ جاري المزامنة..." : "🔄 مزامنة المنتجات الآن"}
+        <div className="card" style={{ textAlign: "center", padding: "52px 20px" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>لا توجد منتجات بعد</div>
+          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 24, lineHeight: 1.7 }}>اضغط مزامنة لجلب منتجاتك من سلة</div>
+          <button className="btn-primary btn-primary-full" onClick={onSync} disabled={syncing}>
+            {syncing ? <><span className="spinner" style={{ width: 16, height: 16 }} /> جاري...</> : "🔄 مزامنة الآن"}
           </button>
-          {syncMsg && <div style={{ fontSize: 13, color: "var(--accent)", marginTop: 14 }}>{syncMsg}</div>}
+          {syncMsg && <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 12 }}>{syncMsg}</div>}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Products Page ────────────────────────────────────────────────────────────
+// ─── Products ─────────────────────────────────────────────────────────────────
 function Products({ products, onOptimize }: { products: Product[]; onOptimize: (p: Product) => void }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "attention" | "good" | "excellent">("all");
-  const [sort, setSort] = useState<"score_asc" | "score_desc" | "name" | "price">("score_asc");
+  const [filter, setFilter] = useState<"all" | "attention" | "good">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const list = products
-    .filter(p => {
-      if (filter === "attention") return p.needs_attention;
-      if (filter === "good") return !p.needs_attention && p.score_total < 80;
-      if (filter === "excellent") return p.score_total >= 80;
-      return true;
-    })
-    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.category?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => {
-      if (sort === "score_asc") return a.score_total - b.score_total;
-      if (sort === "score_desc") return b.score_total - a.score_total;
-      if (sort === "name") return a.name.localeCompare(b.name, "ar");
-      if (sort === "price") return b.price - a.price;
-      return 0;
-    });
-
-  const total = products.length;
-  const attention = products.filter(p => p.needs_attention).length;
+    .filter(p => filter === "attention" ? p.needs_attention : filter === "good" ? !p.needs_attention : true)
+    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.score_total - b.score_total);
 
   return (
-    <div className="fade-up">
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>المنتجات</h1>
-        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 5 }}>تقييمات جودة منتجاتك وفرص التحسين</p>
+    <div className="fu">
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>المنتجات</h1>
+        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>تقييمات جودة منتجاتك وفرص التحسين</p>
       </div>
 
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-        <input className="input" value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ابحث عن منتج..." style={{ flex: 1, minWidth: 200 }} />
+      <input className="input" value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="ابحث عن منتج..." style={{ marginBottom: 12 }} />
 
-        <select className="input" value={sort} onChange={e => setSort(e.target.value as any)}
-          style={{ width: "auto", cursor: "pointer" }}>
-          <option value="score_asc">ترتيب: الأضعف أولاً</option>
-          <option value="score_desc">ترتيب: الأقوى أولاً</option>
-          <option value="name">ترتيب: الاسم</option>
-          <option value="price">ترتيب: السعر</option>
-        </select>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="tab-bar" style={{ marginBottom: 20 }}>
+      <div className="tabs" style={{ marginBottom: 16 }}>
         {[
-          { k: "all", l: `الكل (${total})` },
-          { k: "attention", l: `⚠ تحتاج اهتمام (${attention})` },
-          { k: "good", l: `جيدة (${total - attention - products.filter(p => p.score_total >= 80).length})` },
-          { k: "excellent", l: `✅ ممتازة (${products.filter(p => p.score_total >= 80).length})` },
+          { k: "all", l: `الكل (${products.length})` },
+          { k: "attention", l: `⚠️ تحتاج (${products.filter(p => p.needs_attention).length})` },
+          { k: "good", l: `✅ جيدة (${products.filter(p => !p.needs_attention).length})` },
         ].map(t => (
           <button key={t.k} className={`tab ${filter === t.k ? "active" : ""}`}
             onClick={() => setFilter(t.k as any)}>{t.l}</button>
         ))}
       </div>
 
-      {/* Product List */}
       {list.length === 0 ? (
-        <div className="card" style={{ textAlign: "center", padding: "48px", color: "var(--text3)" }}>
-          {total === 0 ? "لا توجد منتجات — قم بمزامنة المنتجات أولاً" : "لا توجد نتائج للبحث"}
+        <div className="card" style={{ textAlign: "center", padding: "40px", color: "var(--text3)" }}>
+          {products.length === 0 ? "لا توجد منتجات — قم بالمزامنة أولاً" : "لا نتائج"}
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {list.map(p => (
-            <div key={p.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
-              {/* Score accent bar */}
-              <div style={{ height: 3, background: `linear-gradient(90deg, ${C(p.score_total)}33, ${C(p.score_total)})` }} />
-              <div style={{ padding: "16px 20px" }}>
-                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  {/* Image */}
-                  <div style={{ width: 56, height: 56, borderRadius: 10, background: "var(--surface2)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {p.main_image ? <img src={p.main_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 24 }}>📦</span>}
-                  </div>
-                  {/* Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 5 }}>
-                      {p.name}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 14, color: "var(--accent)", fontWeight: 700 }}>{fmt(p.price, p.currency)}</span>
-                      {p.category && <span className="tag" style={{ background: "var(--surface2)", color: "var(--text3)", border: "1px solid var(--border)" }}>{p.category}</span>}
-                      <span className="tag" style={{ background: "var(--surface2)", color: "var(--text3)", border: "1px solid var(--border)" }}>
-                        {p.images_count} 📷
-                      </span>
-                      {p.ai_optimized_at && <span className="tag" style={{ background: "rgba(0,212,168,.1)", color: "var(--accent)", border: "1px solid rgba(0,212,168,.2)" }}>✨ محسَّن</span>}
-                      {p.needs_attention && <span className="tag" style={{ background: "rgba(245,166,35,.1)", color: "var(--warn)", border: "1px solid rgba(245,166,35,.2)" }}>⚠ يحتاج اهتمام</span>}
-                    </div>
-                  </div>
-                  {/* Score */}
-                  <div style={{ textAlign: "center", flexShrink: 0 }}>
-                    <Ring score={p.score_total} size={52} />
-                    <div style={{ fontSize: 10, color: C(p.score_total), fontWeight: 700, marginTop: 3 }}>{L(p.score_total)}</div>
-                  </div>
-                  {/* Actions */}
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    <button className="btn-primary" onClick={() => onOptimize(p)} style={{ fontSize: 13, padding: "9px 16px" }}>
-                      ✨ تحسين
-                    </button>
-                    <button className="btn-ghost" onClick={() => setExpanded(expanded === p.id ? null : p.id)} style={{ padding: "9px 12px", fontSize: 16 }}>
-                      {expanded === p.id ? "▲" : "▼"}
-                    </button>
-                  </div>
-                </div>
-                {/* Expanded */}
-                {expanded === p.id && (
-                  <div style={{ marginTop: 16, padding: "16px", background: "var(--bg)", borderRadius: 10, animation: "fadeUp .3s ease" }}>
-                    <div className="grid-2">
-                      <div>
-                        <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>تفاصيل الجودة</div>
-                        <Bar label="العنوان" value={p.score_title} icon="✍️" />
-                        <Bar label="الصور" value={p.score_images} icon="🖼️" />
-                        <Bar label="الوصف" value={p.score_description} icon="📝" />
-                        <Bar label="SEO" value={p.score_seo} icon="🔍" />
-                        <Bar label="السعر" value={p.score_price} icon="💰" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>معلومات المنتج</div>
-                        {[
-                          { l: "SKU", v: p.sku || "—" },
-                          { l: "الكمية", v: `${p.quantity}` },
-                          { l: "الحالة", v: p.status },
-                          { l: "الوصف", v: strip(p.description).slice(0, 80) + (strip(p.description).length > 80 ? "..." : "") || "لا يوجد وصف" },
-                        ].map(row => (
-                          <div key={row.l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border)", gap: 12 }}>
-                            <span style={{ fontSize: 12, color: "var(--text3)" }}>{row.l}</span>
-                            <span style={{ fontSize: 12, color: "var(--text2)", textAlign: "left", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.v}</span>
-                          </div>
-                        ))}
-                        {p.ai_optimized_at && (
-                          <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,212,168,.06)", borderRadius: 8, border: "1px solid rgba(0,212,168,.15)" }}>
-                            <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 700 }}>✨ تم التحسين بالذكاء الاصطناعي</div>
-                            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 3 }}>
-                              {new Date(p.ai_optimized_at).toLocaleDateString("ar-SA")}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+      ) : list.map(p => (
+        <div key={p.id} className="product-row">
+          <div style={{ height: 3, background: `linear-gradient(90deg,${C(p.score_total)}33,${C(p.score_total)})` }} />
+          <div style={{ padding: "14px 16px" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ width: 50, height: 50, borderRadius: 10, background: "var(--surface2)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.main_image ? <img src={p.main_image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 22 }}>📦</span>}
               </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 4 }}>{p.name}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, color: "var(--accent)", fontWeight: 700 }}>{fmt(p.price, p.currency)}</span>
+                  {p.needs_attention && <span className="tag tag-warn">⚠️ يحتاج اهتمام</span>}
+                  {p.ai_optimized_at && <span className="tag tag-accent">✨ محسَّن</span>}
+                </div>
+              </div>
+              <Ring score={p.score_total} size={48} />
             </div>
-          ))}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="btn-primary" onClick={() => onOptimize(p)} style={{ flex: 1, fontSize: 13, justifyContent: "center" }}>
+                ✨ تحسين بالذكاء الاصطناعي
+              </button>
+              <button className="btn-icon" onClick={() => setExpanded(expanded === p.id ? null : p.id)}>
+                {expanded === p.id ? "▲" : "▼"}
+              </button>
+            </div>
+
+            {/* Expanded Details */}
+            {expanded === p.id && (
+              <div style={{ marginTop: 14, padding: "14px", background: "var(--bg)", borderRadius: 10, animation: "fadeUp .3s ease" }}>
+                <Bar label="العنوان" value={p.score_title} icon="✍️" />
+                <Bar label="الصور" value={p.score_images} icon="🖼️" />
+                <Bar label="الوصف" value={p.score_description} icon="📝" />
+                <Bar label="SEO" value={p.score_seo} icon="🔍" />
+                <Bar label="السعر" value={p.score_price} icon="💰" />
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
-// ─── Analytics Page ───────────────────────────────────────────────────────────
+// ─── Analytics ────────────────────────────────────────────────────────────────
 function Analytics({ products }: { products: Product[] }) {
   const total = products.length;
-  if (total === 0) return (
-    <div className="fade-up card" style={{ textAlign: "center", padding: "60px", color: "var(--text3)" }}>
-      لا توجد بيانات كافية — قم بمزامنة المنتجات أولاً
+  if (!total) return (
+    <div className="fu card" style={{ textAlign: "center", padding: "48px", color: "var(--text3)" }}>
+      لا توجد بيانات — قم بمزامنة المنتجات أولاً
     </div>
   );
 
-  const grades = [
-    { l: "ممتاز A", min: 80, max: 100, color: "var(--accent)" },
-    { l: "جيد B", min: 60, max: 80, color: "var(--accent2)" },
-    { l: "مقبول C", min: 40, max: 60, color: "var(--warn)" },
-    { l: "ضعيف D", min: 0, max: 40, color: "var(--danger)" },
-  ].map(g => ({ ...g, count: products.filter(p => p.score_total >= g.min && p.score_total < g.max).length }));
-
   const avgScore = Math.round(products.reduce((s, p) => s + p.score_total, 0) / total);
-  const maxScore = Math.max(...products.map(p => p.score_total));
-  const minScore = Math.min(...products.map(p => p.score_total));
-  const optimized = products.filter(p => p.ai_optimized_at).length;
-
-  const weakest = [...products].sort((a, b) => a.score_total - b.score_total).slice(0, 5);
-  const strongest = [...products].sort((a, b) => b.score_total - a.score_total).slice(0, 5);
+  const grades = [
+    { l: "ممتاز A", min: 80, color: "var(--accent)" },
+    { l: "جيد B", min: 60, color: "var(--accent2)" },
+    { l: "مقبول C", min: 40, color: "var(--warn)" },
+    { l: "ضعيف D", min: 0, color: "var(--danger)" },
+  ].map((g, i, arr) => ({
+    ...g,
+    count: products.filter(p => p.score_total >= g.min && p.score_total < (arr[i - 1]?.min ?? 101)).length
+  }));
 
   return (
-    <div className="fade-up">
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>التحليلات</h1>
-        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 5 }}>تحليل شامل لأداء متجرك وجودة منتجاتك</p>
+    <div className="fu">
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>التحليلات</h1>
+        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>تحليل شامل لأداء متجرك</p>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid-4" style={{ marginBottom: 20 }}>
+      <div className="grid-4" style={{ marginBottom: 16 }}>
         {[
-          { l: "متوسط الدرجة", v: avgScore, unit: "/100", color: C(avgScore) },
-          { l: "أعلى درجة", v: maxScore, color: C(maxScore) },
-          { l: "أدنى درجة", v: minScore, color: C(minScore) },
-          { l: "منتجات محسَّنة", v: optimized, color: "var(--accent)" },
+          { l: "متوسط الدرجة", v: avgScore, color: C(avgScore) },
+          { l: "أعلى درجة", v: Math.max(...products.map(p => p.score_total)), color: "var(--accent)" },
+          { l: "أدنى درجة", v: Math.min(...products.map(p => p.score_total)), color: "var(--danger)" },
+          { l: "محسَّنة AI", v: products.filter(p => p.ai_optimized_at).length, color: "var(--accent2)" },
         ].map((s, i) => (
-          <div key={i} className="card">
-            <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>{s.l}</div>
-            <div style={{ fontSize: 32, fontWeight: 900, color: s.color, fontFamily: "var(--mono)" }}>
-              {s.v}<span style={{ fontSize: 14, opacity: .5 }}>{s.unit || ""}</span>
-            </div>
+          <div key={i} className="card" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: s.color, fontFamily: "var(--mono)" }}>{s.v}</div>
+            <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>{s.l}</div>
           </div>
         ))}
       </div>
 
-      {/* Distribution */}
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", marginBottom: 20 }}>توزيع درجات الجودة</div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 18 }}>توزيع درجات الجودة</div>
         {grades.map(g => (
-          <div key={g.l} style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
-            <div style={{ width: 60, fontSize: 13, fontWeight: 700, color: g.color, flexShrink: 0 }}>{g.l}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <div className="progress-bar" style={{ flex: 1, height: 8 }}>
-                  <div className="progress-fill" style={{
-                    width: total ? `${(g.count / total) * 100}%` : "0%",
-                    background: g.color, height: "100%"
-                  }} />
-                </div>
-              </div>
+          <div key={g.l} style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 60, fontSize: 12, fontWeight: 700, color: g.color, flexShrink: 0 }}>{g.l}</div>
+            <div className="progress" style={{ flex: 1, height: 8 }}>
+              <div className="progress-fill" style={{ width: `${total ? (g.count / total) * 100 : 0}%`, background: g.color, height: "100%" }} />
             </div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: g.color, fontWeight: 700, width: 70, textAlign: "left" }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: g.color, width: 60, textAlign: "left" }}>
               {g.count} ({total ? Math.round((g.count / total) * 100) : 0}%)
             </div>
           </div>
         ))}
       </div>
 
-      {/* Top & Bottom 5 */}
       <div className="grid-2">
         {[
-          { title: "⬇ الأضعف — تحتاج تحسيناً عاجلاً", list: weakest, color: "var(--danger)" },
-          { title: "⬆ الأقوى — منتجات ممتازة", list: strongest, color: "var(--accent)" },
-        ].map((section) => (
-          <div key={section.title} className="card">
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 16 }}>{section.title}</div>
-            {section.list.map((p, i) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text3)", width: 16 }}>#{i + 1}</div>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color: C(p.score_total), flexShrink: 0 }}>{p.score_total}</div>
+          { title: "⬇️ الأضعف — تحتاج تحسيناً", list: [...products].sort((a, b) => a.score_total - b.score_total).slice(0, 5) },
+          { title: "⬆️ الأقوى — منتجات ممتازة", list: [...products].sort((a, b) => b.score_total - a.score_total).slice(0, 5) },
+        ].map(sec => (
+          <div key={sec.title} className="card">
+            <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 14, fontSize: 13 }}>{sec.title}</div>
+            {sec.list.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", width: 14 }}>#{i + 1}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, color: C(p.score_total), flexShrink: 0 }}>{p.score_total}</div>
               </div>
             ))}
           </div>
@@ -581,111 +568,91 @@ function Analytics({ products }: { products: Product[] }) {
   );
 }
 
-// ─── Settings Page ────────────────────────────────────────────────────────────
-function Settings({ merchant, merchantId, products, onSync, syncing, syncMsg }:
-  { merchant: Merchant | null; merchantId: string; products: Product[]; onSync: () => void; syncing: boolean; syncMsg: string }) {
-
-  const [saved, setSaved] = useState(false);
-
-  const handleReauth = () => {
-    window.location.href = `${SUPABASE_URL}/functions/v1/salla-oauth/initiate`;
-  };
-
+// ─── Settings ─────────────────────────────────────────────────────────────────
+function Settings({ merchant, merchantId, products, onSync, syncing, syncMsg, onUpgrade }: any) {
   return (
-    <div className="fade-up">
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>الإعدادات</h1>
-        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 5 }}>إدارة متجرك واعدادات النظام</p>
+    <div className="fu">
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em" }}>الإعدادات</h1>
+        <p style={{ fontSize: 13, color: "var(--text2)", marginTop: 4 }}>إدارة متجرك وإعدادات النظام</p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Store Info */}
-        <div className="card">
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", marginBottom: 18, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>🏪</span> معلومات المتجر
-          </div>
-          {[
-            { l: "اسم المتجر", v: merchant?.store_name || "—" },
-            { l: "النطاق", v: merchant?.store_domain || "—" },
-            { l: "البريد الإلكتروني", v: merchant?.store_email || "—" },
-            { l: "رقم المتجر", v: merchant?.store_id || "—" },
-            { l: "الخطة", v: merchant?.plan === "pro" ? "🌟 Pro" : "مجاني" },
-            { l: "تاريخ الانضمام", v: merchant?.created_at ? new Date(merchant.created_at).toLocaleDateString("ar-SA") : "—" },
-            { l: "معرِّف لوحة التحكم", v: merchantId },
-          ].map((row, i, arr) => (
-            <div key={row.l} style={{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none", gap: 16 }}>
-              <span style={{ fontSize: 13, color: "var(--text3)", flexShrink: 0 }}>{row.l}</span>
-              <span style={{ fontSize: 13, color: "var(--text2)", fontFamily: "var(--mono)", textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 300 }}>{row.v}</span>
+      {/* Plan Card */}
+      <div className="card card-accent" style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 4 }}>
+              {merchant?.plan === "pro" ? "⭐ الخطة Pro" : "الخطة المجانية"}
             </div>
-          ))}
-        </div>
-
-        {/* Sync */}
-        <div className="card">
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>🔄</span> مزامنة المنتجات
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              {merchant?.plan === "pro" ? "جميع الميزات مفعّلة" : "تحسين محدود — ارقِّ للاستفادة الكاملة"}
+            </div>
           </div>
-          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 18, lineHeight: 1.6 }}>
-            جلب أحدث بيانات المنتجات من متجرك في سلة وإعادة حساب درجات الجودة
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <button className="btn-primary" onClick={onSync} disabled={syncing}>
-              {syncing ? "⏳ جاري المزامنة..." : "🔄 مزامنة الآن"}
+          {merchant?.plan !== "pro" && (
+            <button className="btn-primary" onClick={onUpgrade} style={{ fontSize: 13 }}>
+              ⬆️ ترقية الآن — 199 ر.س
             </button>
-            <div style={{ fontSize: 13, color: "var(--text3)" }}>
-              آخر مزامنة: {products[0]?.last_synced_at ? new Date(products[0].last_synced_at).toLocaleString("ar-SA") : "لم تتم بعد"}
-            </div>
-          </div>
-          {syncMsg && (
-            <div style={{ marginTop: 12, padding: "10px 14px", background: syncMsg.includes("✅") ? "rgba(0,212,168,.08)" : "rgba(255,59,92,.08)", borderRadius: 8, fontSize: 13, color: syncMsg.includes("✅") ? "var(--accent)" : "var(--danger)" }}>
-              {syncMsg}
-            </div>
           )}
         </div>
+      </div>
 
-        {/* Reconnect */}
-        <div className="card">
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>🔗</span> إعادة ربط المتجر
+      {/* Store Info */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 14, fontSize: 14 }}>🏪 معلومات المتجر</div>
+        {[
+          { l: "اسم المتجر", v: merchant?.store_name || "—" },
+          { l: "النطاق", v: merchant?.store_domain || "—" },
+          { l: "البريد", v: merchant?.store_email || "—" },
+          { l: "رقم المتجر", v: merchant?.store_id || "—" },
+          { l: "تاريخ الانضمام", v: merchant?.created_at ? new Date(merchant.created_at).toLocaleDateString("ar-SA") : "—" },
+        ].map((row, i, arr) => (
+          <div key={row.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none", gap: 12 }}>
+            <span style={{ fontSize: 13, color: "var(--text3)", flexShrink: 0 }}>{row.l}</span>
+            <span style={{ fontSize: 12, color: "var(--text2)", fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", textAlign: "left", maxWidth: "60%" }}>{row.v}</span>
           </div>
-          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 18, lineHeight: 1.6 }}>
-            في حال انتهاء صلاحية التصريح أو تغيير بيانات المتجر، يمكنك إعادة الربط من هنا
-          </div>
-          <button className="btn-ghost" onClick={handleReauth}>
-            🔑 إعادة ربط متجر سلة
+        ))}
+      </div>
+
+      {/* Sync */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 6, fontSize: 14 }}>🔄 مزامنة المنتجات</div>
+        <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14, lineHeight: 1.6 }}>
+          جلب أحدث بيانات المنتجات من متجرك وإعادة حساب درجات الجودة
+        </div>
+        <div className="sync-bar">
+          <button className="btn-primary" onClick={onSync} disabled={syncing}>
+            {syncing ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: "2px" }} /> جاري...</> : "🔄 مزامنة الآن"}
           </button>
+          <span style={{ fontSize: 12, color: "var(--text3)" }}>
+            آخر مزامنة: {products[0]?.last_synced_at ? new Date(products[0].last_synced_at).toLocaleString("ar-SA") : "لم تتم"}
+          </span>
         </div>
+        {syncMsg && <div style={{ marginTop: 10, fontSize: 13, color: syncMsg.includes("✅") ? "var(--accent)" : "var(--danger)" }}>{syncMsg}</div>}
+      </div>
 
-        {/* Stats Summary */}
-        <div className="card">
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", marginBottom: 18, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>📊</span> إحصائيات النظام
-          </div>
-          <div className="grid-3">
-            {[
-              { l: "إجمالي المنتجات", v: products.length },
-              { l: "محسَّنة بالذكاء الاصطناعي", v: products.filter(p => p.ai_optimized_at).length },
-              { l: "تحتاج اهتمام", v: products.filter(p => p.needs_attention).length },
-            ].map((s, i) => (
-              <div key={i} style={{ textAlign: "center", padding: "16px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "var(--accent)", fontFamily: "var(--mono)" }}>{s.v}</div>
-                <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>{s.l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Reconnect */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 6, fontSize: 14 }}>🔗 إعادة ربط المتجر</div>
+        <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>في حال انتهاء صلاحية التصريح يمكنك إعادة الربط</div>
+        <button className="btn-ghost" onClick={() => window.location.href = `${SUPABASE_URL}/functions/v1/salla-oauth/initiate`}>
+          🔑 إعادة ربط سلة
+        </button>
+      </div>
 
-        {/* About */}
-        <div className="card" style={{ borderColor: "rgba(0,212,168,.15)" }}>
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <div style={{ fontSize: 36, fontWeight: 900, color: "var(--accent)", fontFamily: "var(--sans)" }}>محسِّن</div>
-            <div>
-              <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6 }}>
-                منصة ذكاء اصطناعي لتحسين متاجر سلة وزد
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 4 }}>الإصدار 1.0.0 — Beta</div>
+      {/* Stats */}
+      <div className="card">
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 14, fontSize: 14 }}>📊 إحصائيات</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+          {[
+            { l: "إجمالي المنتجات", v: products.length },
+            { l: "محسَّن AI", v: products.filter((p: Product) => p.ai_optimized_at).length },
+            { l: "يحتاج اهتمام", v: products.filter((p: Product) => p.needs_attention).length },
+          ].map((s, i) => (
+            <div key={i} style={{ textAlign: "center", padding: "12px 8px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "var(--accent)", fontFamily: "var(--mono)" }}>{s.v}</div>
+              <div style={{ fontSize: 10, color: "var(--text3)", marginTop: 5, lineHeight: 1.3 }}>{s.l}</div>
             </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>
@@ -693,233 +660,231 @@ function Settings({ merchant, merchantId, products, onSync, syncing, syncMsg }:
 }
 
 // ─── AI Optimizer Modal ───────────────────────────────────────────────────────
-function AIModal({ product, merchantId, onClose, onDone }:
-  { product: Product; merchantId: string; onClose: () => void; onDone: () => void }) {
-
+function AIModal({ product, merchantId, onClose, onDone }: any) {
   const [step, setStep] = useState<"idle" | "loading" | "result" | "applying" | "done" | "error">("idle");
   const [result, setResult] = useState<AIResult | null>(null);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"title" | "description" | "keywords">("title");
+  const [tab, setTab] = useState<"title" | "description" | "keywords">("title");
 
   async function run() {
-    setStep("loading");
-    setError("");
+    setStep("loading"); setError("");
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-product`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchant_id: merchantId, product_id: product.id }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setResult(parseResult(data, product));
+      const s = data.structured;
+      setResult({
+        title: s?.title || product.name,
+        description: s?.description || strip(product.description),
+        keywords: s?.keywords || [],
+        score_estimate: s?.score_estimate || product.score_total,
+        tips: s?.top_tip ? [s.top_tip] : [],
+      });
       setStep("result");
     } catch (e: any) {
-      setError(e.message || "فشل الاتصال بالذكاء الاصطناعي");
-      setStep("error");
+      setError(e.message || "فشل الاتصال"); setStep("error");
     }
   }
-
-  function parseResult(data: any, p: Product): AIResult {
-    const text = data.analysis || data.result || "";
-    const titleMatch = text.match(/عنوان[^:：]*[:：]\s*([^\n]+)/);
-    const descMatch = text.match(/وصف[^:：]*[:：]\s*([\s\S]+?)(?=\n[#*]|\nكلمات|$)/i);
-    const kwMatch = text.match(/كلمات[^:：]*[:：]\s*([^\n]+)/);
-    const keywords = kwMatch?.[1]?.split(/[,،]/).map((k: string) => k.trim()).filter(Boolean)
-      || [p.name, p.category, "سعودي", "متجر إلكتروني"].filter(Boolean);
-    const estScore = Math.min(100, p.score_total + 20 + Math.floor(Math.random() * 15));
-    return {
-      title: titleMatch?.[1]?.trim() || `${p.name} — جودة عالية | أفضل سعر`,
-      description: descMatch?.[1]?.trim() || `${p.name} من أجود المنتجات المتاحة في السوق السعودي. يتميز بجودة تصنيع عالية وتصميم عصري يناسب مختلف الأذواق. يُشحن سريعاً لجميع مناطق المملكة العربية السعودية مع ضمان الجودة وسهولة الإرجاع.`,
-      keywords,
-      score_estimate: estScore,
-      tips: [
-        avgTitle(p) < 60 ? "أضف تفاصيل ومزايا واضحة في العنوان" : null,
-        p.images_count < 3 ? "أضف صوراً إضافية لزيادة ثقة المشتري" : null,
-        strip(p.description).split(/\s+/).length < 50 ? "وسّع الوصف بذكر المميزات والمواصفات" : null,
-      ].filter(Boolean) as string[],
-    };
-  }
-
-  function avgTitle(p: Product) { return p.score_title; }
 
   async function apply() {
     if (!result) return;
     setStep("applying");
     try {
       await fetch(`${SUPABASE_URL}/functions/v1/apply-optimization`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          merchant_id: merchantId, product_id: product.id,
-          updates: { name: result.title, description: result.description },
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchant_id: merchantId, product_id: product.id, updates: { title: result.title, description: result.description, keywords: result.keywords } }),
       });
-      // Update locally in supabase
-      await supabase.from("products").update({
-        ai_title: result.title,
-        ai_description: result.description,
-        ai_keywords: result.keywords.join("، "),
-        ai_optimized_at: new Date().toISOString(),
-      }).eq("id", product.id);
       setStep("done");
-    } catch {
-      setError("فشل تطبيق التغييرات");
-      setStep("error");
-    }
+    } catch { setError("فشل التطبيق"); setStep("error"); }
   }
 
   return (
-    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box">
+        {/* Handle bar mobile */}
+        <div style={{ width: 36, height: 4, background: "var(--border2)", borderRadius: 2, margin: "12px auto 0" }} />
+
         {/* Header */}
-        <div style={{ padding: "22px 26px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "var(--accent)" }}>✨</span> AI Optimizer
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 3, maxWidth: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {product.name}
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>✨ AI Optimizer</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: 4 }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer", fontSize: 22, padding: 4 }}>✕</button>
         </div>
 
-        <div style={{ padding: "24px 26px" }}>
-          {/* Current Score */}
-          <div style={{ display: "flex", gap: 14, marginBottom: 22 }}>
-            <div style={{ padding: "14px 20px", background: "var(--bg)", borderRadius: 12, border: "1px solid var(--border)", textAlign: "center", minWidth: 90 }}>
-              <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>الدرجة الحالية</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 26, fontWeight: 700, color: C(product.score_total) }}>{product.score_total}</div>
+        <div style={{ padding: "20px" }}>
+          {/* Score comparison */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+            <div style={{ flex: 1, padding: "12px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)", textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--text3)", marginBottom: 4 }}>الدرجة الحالية</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 24, fontWeight: 700, color: C(product.score_total) }}>{product.score_total}</div>
             </div>
-            {result && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", color: "var(--text3)", fontSize: 20 }}>←</div>
-                <div style={{ padding: "14px 20px", background: "rgba(0,212,168,.06)", borderRadius: 12, border: "1px solid rgba(0,212,168,.2)", textAlign: "center", minWidth: 90 }}>
-                  <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 6 }}>الدرجة المتوقعة</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 26, fontWeight: 700, color: "var(--accent)" }}>{result.score_estimate}</div>
-                </div>
-              </>
-            )}
-            <div style={{ flex: 1, padding: "14px 18px", background: "var(--bg)", borderRadius: 12, border: "1px solid var(--border)", fontSize: 13, color: "var(--text2)", lineHeight: 1.6, display: "flex", alignItems: "center" }}>
-              الذكاء الاصطناعي سيحسّن عنوان المنتج ووصفه والكلمات المفتاحية لرفع درجته وزيادة المبيعات
-            </div>
+            {result && <>
+              <div style={{ display: "flex", alignItems: "center", color: "var(--text3)", fontSize: 18 }}>→</div>
+              <div style={{ flex: 1, padding: "12px", background: "rgba(0,212,168,.06)", borderRadius: 10, border: "1px solid rgba(0,212,168,.2)", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "var(--accent)", marginBottom: 4 }}>الدرجة المتوقعة</div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 24, fontWeight: 700, color: "var(--accent)" }}>{result.score_estimate}</div>
+              </div>
+            </>}
           </div>
 
-          {/* Idle */}
           {step === "idle" && (
-            <button className="btn-primary" onClick={run} style={{ width: "100%", padding: "14px" }}>
-              🚀 تشغيل تحسين الذكاء الاصطناعي
-            </button>
+            <button className="btn-primary btn-primary-full" onClick={run}>🚀 تشغيل تحسين الذكاء الاصطناعي</button>
           )}
 
-          {/* Loading */}
           {step === "loading" && (
-            <div style={{ textAlign: "center", padding: "48px 0" }}>
-              <div style={{ width: 48, height: 48, border: "3px solid var(--border)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "spin .9s linear infinite", margin: "0 auto 18px" }} />
-              <div style={{ fontSize: 15, color: "var(--text2)", fontWeight: 600 }}>الذكاء الاصطناعي يحلل منتجك...</div>
-              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>يستغرق ذلك بضع ثوانٍ</div>
+            <div style={{ textAlign: "center", padding: "36px 0" }}>
+              <div className="spinner spinner-lg" style={{ margin: "0 auto 16px" }} />
+              <div style={{ fontSize: 14, color: "var(--text2)", fontWeight: 600 }}>الذكاء الاصطناعي يحلل منتجك...</div>
+              <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 6 }}>يستغرق بضع ثوانٍ</div>
             </div>
           )}
 
-          {/* Error */}
           {step === "error" && (
             <div>
-              <div style={{ padding: "16px", background: "rgba(255,59,92,.08)", border: "1px solid rgba(255,59,92,.2)", borderRadius: 10, marginBottom: 16 }}>
-                <div style={{ fontSize: 14, color: "var(--danger)", fontWeight: 600 }}>⚠ {error}</div>
-              </div>
-              <button className="btn-ghost" onClick={run} style={{ width: "100%" }}>إعادة المحاولة</button>
+              <div style={{ padding: "14px", background: "rgba(255,59,92,.08)", border: "1px solid rgba(255,59,92,.2)", borderRadius: 10, marginBottom: 14, fontSize: 13, color: "var(--danger)" }}>⚠️ {error}</div>
+              <button className="btn-ghost" style={{ width: "100%" }} onClick={run}>إعادة المحاولة</button>
             </div>
           )}
 
-          {/* Result */}
           {(step === "result" || step === "applying") && result && (
-            <div className="fade-in">
-              {/* Tips */}
+            <div className="fi">
               {result.tips.length > 0 && (
-                <div style={{ marginBottom: 18, padding: "12px 16px", background: "rgba(245,166,35,.06)", border: "1px solid rgba(245,166,35,.15)", borderRadius: 10 }}>
-                  {result.tips.map((tip, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "var(--warn)", display: "flex", gap: 8, marginTop: i > 0 ? 6 : 0 }}>
-                      <span>💡</span><span>{tip}</span>
-                    </div>
-                  ))}
+                <div style={{ marginBottom: 14, padding: "10px 14px", background: "rgba(245,166,35,.06)", border: "1px solid rgba(245,166,35,.15)", borderRadius: 10, fontSize: 12, color: "var(--warn)" }}>
+                  💡 {result.tips[0]}
                 </div>
               )}
-
-              {/* Tabs */}
-              <div className="tab-bar" style={{ marginBottom: 18 }}>
+              <div className="tabs" style={{ marginBottom: 14 }}>
                 {[{ k: "title", l: "✍️ العنوان" }, { k: "description", l: "📝 الوصف" }, { k: "keywords", l: "🔑 الكلمات" }].map(t => (
-                  <button key={t.k} className={`tab ${activeTab === t.k ? "active" : ""}`}
-                    onClick={() => setActiveTab(t.k as any)}>{t.l}</button>
+                  <button key={t.k} className={`tab ${tab === t.k ? "active" : ""}`} onClick={() => setTab(t.k as any)}>{t.l}</button>
                 ))}
               </div>
 
-              {activeTab === "title" && (
-                <div className="fade-in">
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 7, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em" }}>العنوان الحالي</div>
-                    <div style={{ padding: "12px 16px", background: "var(--bg)", borderRadius: 10, fontSize: 14, color: "var(--text3)", border: "1px solid var(--border)" }}>{product.name}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 7, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em" }}>✨ العنوان المقترح</div>
-                    <div style={{ padding: "12px 16px", background: "rgba(0,212,168,.06)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 10, fontSize: 14, color: "var(--text)", lineHeight: 1.6 }}>{result.title}</div>
-                  </div>
+              {tab === "title" && (
+                <div className="fi">
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6, fontWeight: 700 }}>الحالي</div>
+                  <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 10, fontSize: 14, color: "var(--text3)", marginBottom: 12, border: "1px solid var(--border)" }}>{product.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 6, fontWeight: 700 }}>✨ المقترح</div>
+                  <div style={{ padding: "10px 14px", background: "rgba(0,212,168,.06)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 10, fontSize: 14, color: "var(--text)", lineHeight: 1.6 }}>{result.title}</div>
                 </div>
               )}
 
-              {activeTab === "description" && (
-                <div className="fade-in">
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 7, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em" }}>الوصف الحالي</div>
-                    <div style={{ padding: "12px 16px", background: "var(--bg)", borderRadius: 10, fontSize: 13, color: "var(--text3)", maxHeight: 100, overflow: "auto", border: "1px solid var(--border)", lineHeight: 1.6 }}>
-                      {strip(product.description) || "لا يوجد وصف"}
-                    </div>
+              {tab === "description" && (
+                <div className="fi">
+                  <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6, fontWeight: 700 }}>الحالي</div>
+                  <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 10, fontSize: 13, color: "var(--text3)", maxHeight: 90, overflow: "auto", marginBottom: 12, border: "1px solid var(--border)", lineHeight: 1.6 }}>
+                    {strip(product.description) || "لا يوجد وصف"}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 7, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em" }}>✨ الوصف المقترح</div>
-                    <div style={{ padding: "12px 16px", background: "rgba(0,212,168,.06)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 10, fontSize: 13, color: "var(--text)", maxHeight: 200, overflow: "auto", lineHeight: 1.8 }}>
-                      {result.description}
-                    </div>
-                  </div>
+                  <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 6, fontWeight: 700 }}>✨ المقترح</div>
+                  <div style={{ padding: "10px 14px", background: "rgba(0,212,168,.06)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 10, fontSize: 13, color: "var(--text)", maxHeight: 160, overflow: "auto", lineHeight: 1.8 }}>{result.description}</div>
                 </div>
               )}
 
-              {activeTab === "keywords" && (
-                <div className="fade-in">
-                  <div style={{ fontSize: 11, color: "var(--accent)", marginBottom: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em" }}>✨ الكلمات المفتاحية المقترحة</div>
+              {tab === "keywords" && (
+                <div className="fi">
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {result.keywords.map((kw, i) => (
-                      <span key={i} style={{ padding: "6px 14px", background: "rgba(0,212,168,.08)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 20, fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>
-                        {kw}
-                      </span>
+                    {result.keywords.map((k, i) => (
+                      <span key={i} style={{ padding: "6px 14px", background: "rgba(0,212,168,.08)", border: "1px solid rgba(0,212,168,.2)", borderRadius: 20, fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>{k}</span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Actions */}
-              <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
-                <button className="btn-primary" onClick={apply} disabled={step === "applying"} style={{ flex: 1 }}>
-                  {step === "applying" ? "⏳ جاري التطبيق..." : "✅ تطبيق على المتجر"}
+              <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+                <button className="btn-primary" onClick={apply} disabled={step === "applying"} style={{ flex: 1, justifyContent: "center" }}>
+                  {step === "applying" ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: "2px" }} /> جاري...</> : "✅ تطبيق على المتجر"}
                 </button>
-                <button className="btn-ghost" onClick={run} disabled={step === "applying"}>🔄 إعادة</button>
+                <button className="btn-ghost" onClick={run} disabled={step === "applying"}>🔄</button>
               </div>
             </div>
           )}
 
-          {/* Done */}
           {step === "done" && (
-            <div className="fade-in" style={{ textAlign: "center", padding: "32px 0" }}>
-              <div style={{ fontSize: 52, marginBottom: 16 }}>✅</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>تم تطبيق التحسينات بنجاح</div>
-              <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 24, lineHeight: 1.6 }}>
-                تم تحديث العنوان والوصف والكلمات المفتاحية في قاعدة البيانات
-              </div>
-              <button className="btn-primary" onClick={() => { onDone(); onClose(); }}>
-                العودة للمنتجات
-              </button>
+            <div className="fi" style={{ textAlign: "center", padding: "28px 0" }}>
+              <div style={{ fontSize: 48, marginBottom: 14 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>تم التطبيق بنجاح</div>
+              <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 20 }}>تم حفظ التحسينات في قاعدة البيانات</div>
+              <button className="btn-primary btn-primary-full" onClick={() => { onDone(); onClose(); }}>العودة ←</button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Upgrade Modal ────────────────────────────────────────────────────────────
+function UpgradeModal({ merchantId, onClose }: { merchantId: string; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+
+  const features = [
+    { icon: "✨", title: "تحسين غير محدود بالذكاء الاصطناعي", desc: "حسِّن جميع منتجاتك بعناوين ووصف احترافي" },
+    { icon: "📊", title: "تقارير وتحليلات متقدمة", desc: "رؤى عميقة وتوصيات مخصصة لزيادة مبيعاتك" },
+    { icon: "🔄", title: "مزامنة تلقائية يومية", desc: "يُحدِّث درجات منتجاتك تلقائياً" },
+    { icon: "🎯", title: "اكتشاف المنتجات الرابحة", desc: "أفضل المنتجات المطلوبة في السوق السعودي" },
+    { icon: "⚡", title: "أولوية في المعالجة", desc: "تحليل أسرع وخدمة أفضل" },
+  ];
+
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ background: "#080f1c" }}>
+        <div style={{ width: 36, height: 4, background: "var(--border2)", borderRadius: 2, margin: "12px auto 0" }} />
+
+        {/* Hero */}
+        <div style={{ padding: "24px 20px 20px", textAlign: "center", borderBottom: "1px solid var(--border)", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 0%, rgba(0,212,168,.1) 0%, transparent 60%)", pointerEvents: "none" }} />
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 14px", borderRadius: 20, background: "rgba(0,212,168,.1)", border: "1px solid rgba(0,212,168,.25)", color: "var(--accent)", fontSize: 11, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 14 }}>
+            ⭐ خطة Pro
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: "var(--text)", letterSpacing: "-.02em", marginBottom: 8 }}>
+            ارفع متجرك <span style={{ color: "var(--accent)" }}>لمستوى آخر</span>
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6 }}>
+            احصل على جميع أدوات التحسين المتقدمة وابدأ في زيادة مبيعاتك
+          </div>
+
+          {/* Price */}
+          <div style={{ display: "inline-flex", alignItems: "baseline", gap: 4, marginTop: 18, padding: "12px 24px", background: "rgba(0,212,168,.06)", border: "1px solid rgba(0,212,168,.15)", borderRadius: 14 }}>
+            <span style={{ fontSize: 16, color: "var(--accent)", fontWeight: 700 }}>ر.س</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 40, fontWeight: 700, color: "var(--accent)", lineHeight: 1 }}>199</span>
+            <div>
+              <div style={{ fontSize: 13, color: "var(--text3)" }}>/ شهرياً</div>
+              <div style={{ fontSize: 11, textDecoration: "line-through", color: "var(--text3)" }}>399 ر.س</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: "18px 20px 24px" }}>
+          {/* Features */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+            {features.map((f, i) => (
+              <div key={i} style={{ display: "flex", gap: 12, padding: "12px 14px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12 }}>
+                <div style={{ fontSize: 20 }}>{f.icon}</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>{f.title}</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)", lineHeight: 1.5 }}>{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* CTA */}
+          <button className="btn-primary btn-primary-full" disabled={loading}
+            onClick={() => { setLoading(true); setTimeout(() => { window.open(`https://mohsen-sigma.vercel.app/checkout?merchant_id=${merchantId}&plan=pro`, "_blank"); setLoading(false); }, 600); }}>
+            {loading ? <><span className="spinner" style={{ width: 16, height: 16, borderWidth: "2px" }} /> جاري...</> : "🚀 ابدأ الخطة Pro — 199 ر.س / شهر"}
+          </button>
+
+          <div style={{ textAlign: "center", fontSize: 11, color: "var(--text3)", margin: "12px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            🔒 دفع آمن عبر Moyasar · يمكن الإلغاء في أي وقت · ضمان 7 أيام
+          </div>
+
+          <button className="btn-ghost" style={{ width: "100%" }} onClick={onClose}>
+            ليس الآن — استمر بالخطة المجانية
+          </button>
         </div>
       </div>
     </div>
@@ -936,34 +901,29 @@ export default function Dashboard() {
   const [syncMsg, setSyncMsg] = useState("");
   const [nav, setNav] = useState<"overview" | "products" | "analytics" | "settings">("overview");
   const [optimizerProduct, setOptimizerProduct] = useState<Product | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const id = p.get("merchant_id");
+    const id = new URLSearchParams(window.location.search).get("merchant_id");
     setMerchantId(id);
   }, []);
 
-  useEffect(() => {
-    if (merchantId) loadData();
-    else setLoading(false);
-  }, [merchantId]);
+  useEffect(() => { merchantId ? loadData() : setLoading(false); }, [merchantId]);
 
   async function loadData() {
     setLoading(true);
     const { data: m } = await supabase.from("merchants").select("*").eq("id", merchantId).single();
     if (m) setMerchant(m);
-    const { data: p } = await supabase.from("products").select("*").eq("merchant_id", merchantId).order("score_total", { ascending: true });
+    const { data: p } = await supabase.from("products").select("*").eq("merchant_id", merchantId).order("score_total");
     if (p) setProducts(p);
     setLoading(false);
   }
 
   async function syncProducts() {
-    setSyncing(true);
-    setSyncMsg("جاري المزامنة...");
+    setSyncing(true); setSyncMsg("جاري المزامنة...");
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-products`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ merchant_id: merchantId }),
       });
       const data = await res.json();
@@ -974,24 +934,26 @@ export default function Dashboard() {
     setTimeout(() => setSyncMsg(""), 6000);
   }
 
+  const attention = products.filter(p => p.needs_attention).length;
+
   const navItems = [
-    { k: "overview", icon: "⬡", label: "نظرة عامة" },
-    { k: "products", icon: "◫", label: "المنتجات", badge: products.filter(p => p.needs_attention).length },
-    { k: "analytics", icon: "◈", label: "التحليلات" },
-    { k: "settings", icon: "◎", label: "الإعدادات" },
+    { k: "overview", icon: "⬡", label: "الرئيسية", badge: 0 },
+    { k: "products", icon: "◫", label: "المنتجات", badge: attention },
+    { k: "analytics", icon: "◈", label: "التحليلات", badge: 0 },
+    { k: "settings", icon: "◎", label: "الإعدادات", badge: 0 },
   ];
 
-  // ── No merchant_id ──
+  // ── No merchant ──
   if (!merchantId && !loading) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+    <div style={{ minHeight: "100vh", minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 20 }}>
       <style>{CSS}</style>
-      <div className="card fade-up" style={{ textAlign: "center", padding: "56px 48px", maxWidth: 420, border: "1px solid rgba(0,212,168,.15)" }}>
-        <div style={{ fontSize: 56, marginBottom: 20 }}>🔗</div>
-        <div style={{ fontSize: 32, fontWeight: 900, color: "var(--accent)", marginBottom: 10 }}>محسِّن</div>
-        <div style={{ fontSize: 14, color: "var(--text2)", marginBottom: 30, lineHeight: 1.7 }}>
-          منصة ذكاء اصطناعي لتحسين متجرك في سلة وزيادة مبيعاتك. اربط متجرك الآن لتبدأ.
+      <div className="card fu" style={{ textAlign: "center", padding: "48px 32px", maxWidth: 380, width: "100%", border: "1px solid rgba(0,212,168,.15)" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
+        <div style={{ fontSize: 28, fontWeight: 900, color: "var(--accent)", marginBottom: 8 }}>محسِّن</div>
+        <div style={{ fontSize: 14, color: "var(--text2)", marginBottom: 28, lineHeight: 1.7 }}>
+          منصة ذكاء اصطناعي لتحسين متجرك في سلة وزيادة مبيعاتك. اربط متجرك الآن.
         </div>
-        <button className="btn-primary" style={{ width: "100%", padding: "14px" }}
+        <button className="btn-primary btn-primary-full"
           onClick={() => window.location.href = `${SUPABASE_URL}/functions/v1/salla-oauth/initiate`}>
           ربط متجر سلة
         </button>
@@ -1003,85 +965,89 @@ export default function Dashboard() {
   if (loading) return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", flexDirection: "column", gap: 16 }}>
       <style>{CSS}</style>
-      <div style={{ width: 40, height: 40, border: "3px solid var(--border)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "spin .9s linear infinite" }} />
-      <div style={{ fontSize: 14, color: "var(--text3)" }}>جاري التحميل...</div>
+      <div className="spinner spinner-lg" />
+      <div style={{ fontSize: 13, color: "var(--text3)" }}>جاري التحميل...</div>
     </div>
   );
 
+  const pageProps = { products, merchant, merchantId, onSync: syncProducts, syncing, syncMsg, onOptimize: setOptimizerProduct, onNav: setNav, onUpgrade: () => setShowUpgrade(true) };
+
   return (
-    <div dir="rtl" style={{ display: "flex", minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--sans)" }}>
+    <div className="app">
       <style>{CSS}</style>
 
-      {/* ── Sidebar ── */}
-      <aside className="sidebar" style={{ width: 230, background: "var(--surface)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", padding: "24px 12px", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        {/* Logo */}
-        <div style={{ padding: "8px 10px 24px", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
-          <div style={{ fontSize: 24, fontWeight: 900, color: "var(--accent)", letterSpacing: "-.03em" }}>محسِّن</div>
-          <div style={{ fontSize: 9, color: "var(--text3)", letterSpacing: ".14em", textTransform: "uppercase", marginTop: 3 }}>AI Commerce Intelligence</div>
+      {/* ── Sidebar (Desktop) ── */}
+      <aside className="sidebar">
+        <div style={{ padding: "4px 8px 20px", borderBottom: "1px solid var(--border)", marginBottom: 16 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "var(--accent)" }}>محسِّن</div>
+          <div style={{ fontSize: 9, color: "var(--text3)", letterSpacing: ".12em", textTransform: "uppercase", marginTop: 2 }}>AI Commerce</div>
         </div>
 
-        {/* Store Card */}
         {merchant && (
-          <div style={{ padding: "12px 10px", background: "var(--surface2)", borderRadius: 12, marginBottom: 20, border: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), var(--accent2))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: "var(--bg)", flexShrink: 0 }}>
-                {merchant.store_name?.[0] || "م"}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div className="label" style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{merchant.store_name}</div>
-                <div className="label" style={{ fontSize: 10, color: "var(--text3)", marginTop: 2 }}>{merchant.plan === "pro" ? "🌟 Pro" : "مجاني"}</div>
-              </div>
+          <div style={{ padding: "10px", background: "var(--surface2)", borderRadius: 12, marginBottom: 18, border: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "center" }}>
+            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg,var(--accent),var(--accent2))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 900, color: "var(--bg)", flexShrink: 0 }}>
+              {merchant.store_name?.[0] || "م"}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{merchant.store_name}</div>
+              <div style={{ fontSize: 10, color: "var(--text3)", marginTop: 2 }}>{merchant.plan === "pro" ? "⭐ Pro" : "مجاني"}</div>
             </div>
           </div>
         )}
 
-        {/* Nav */}
-        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+        <nav style={{ flex: 1 }}>
           {navItems.map(item => (
-            <button key={item.k} className={`nav-btn ${nav === item.k ? "active" : ""}`}
-              onClick={() => setNav(item.k as any)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", borderRight: "2px solid transparent", cursor: "pointer", fontFamily: "var(--sans)", fontSize: 13, fontWeight: 600, width: "100%", textAlign: "right", color: "var(--text3)", background: "transparent" }}>
-              <span style={{ fontSize: 17, opacity: .7 }}>{item.icon}</span>
-              <span className="label">{item.label}</span>
-              {item.badge ? (
-                <span style={{ marginRight: "auto", background: "rgba(255,59,92,.15)", color: "var(--danger)", fontSize: 10, fontFamily: "var(--mono)", padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>
-                  {item.badge}
-                </span>
-              ) : null}
+            <button key={item.k} className={`nav-item ${nav === item.k ? "active" : ""}`}
+              onClick={() => setNav(item.k as any)}>
+              <span className="ni-icon">{item.icon}</span>
+              <span>{item.label}</span>
+              {item.badge > 0 && <span className="ni-badge">{item.badge}</span>}
             </button>
           ))}
         </nav>
 
-        {/* Bottom: Sync */}
-        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 12 }}>
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
           <button onClick={syncProducts} disabled={syncing}
-            style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--border2)", background: "transparent", color: "var(--text3)", cursor: syncing ? "not-allowed" : "pointer", fontSize: 12, fontFamily: "var(--sans)", display: "flex", alignItems: "center", gap: 8, justifyContent: "center", fontWeight: 600, transition: "all .2s" }}>
-            <span style={{ display: "inline-block", animation: syncing ? "spin 1s linear infinite" : "none", fontSize: 14 }}>↻</span>
-            <span className="label">{syncing ? "جاري المزامنة..." : "مزامنة المنتجات"}</span>
+            style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--border2)", background: "transparent", color: "var(--text3)", cursor: syncing ? "not-allowed" : "pointer", fontSize: 12, fontFamily: "var(--sans)", display: "flex", alignItems: "center", gap: 8, justifyContent: "center", fontWeight: 600 }}>
+            <span style={{ display: "inline-block", animation: syncing ? "spin 1s linear infinite" : "none" }}>↻</span>
+            {syncing ? "جاري المزامنة..." : "مزامنة المنتجات"}
           </button>
-          {syncMsg && <div style={{ fontSize: 11, color: "var(--text3)", textAlign: "center", marginTop: 7, lineHeight: 1.4 }}>{syncMsg}</div>}
+          {syncMsg && <div style={{ fontSize: 11, color: "var(--text3)", textAlign: "center", marginTop: 6 }}>{syncMsg}</div>}
         </div>
       </aside>
 
-      {/* ── Main ── */}
-      <main className="main-content" style={{ flex: 1, padding: "36px 32px", overflowY: "auto", maxWidth: "calc(100vw - 230px)" }}>
-        {nav === "overview" && (
-          <Overview products={products} merchant={merchant} onSync={syncProducts} syncing={syncing} syncMsg={syncMsg} onOptimize={setOptimizerProduct} onNav={setNav} />
-        )}
-        {nav === "products" && (
-          <Products products={products} onOptimize={setOptimizerProduct} />
-        )}
-        {nav === "analytics" && (
-          <Analytics products={products} />
-        )}
-        {nav === "settings" && (
-          <Settings merchant={merchant} merchantId={merchantId!} products={products} onSync={syncProducts} syncing={syncing} syncMsg={syncMsg} />
-        )}
+      {/* ── Mobile Header ── */}
+      <header className="mobile-header">
+        <div className="logo">محسِّن</div>
+        {merchant && <div className="store-badge">{merchant.store_name}</div>}
+      </header>
+
+      {/* ── Main Content ── */}
+      <main className="main">
+        {nav === "overview" && <Overview {...pageProps} />}
+        {nav === "products" && <Products products={products} onOptimize={setOptimizerProduct} />}
+        {nav === "analytics" && <Analytics products={products} />}
+        {nav === "settings" && <Settings {...pageProps} />}
       </main>
 
-      {/* ── AI Modal ── */}
+      {/* ── Bottom Nav (Mobile) ── */}
+      <nav className="bottom-nav">
+        {navItems.map(item => (
+          <button key={item.k} className={`bottom-nav-btn ${nav === item.k ? "active" : ""}`}
+            onClick={() => setNav(item.k as any)}>
+            {item.badge > 0 && <span className="nav-badge">{item.badge}</span>}
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* ── Modals ── */}
       {optimizerProduct && (
         <AIModal product={optimizerProduct} merchantId={merchantId!} onClose={() => setOptimizerProduct(null)} onDone={loadData} />
+      )}
+      {showUpgrade && (
+        <UpgradeModal merchantId={merchantId!} onClose={() => setShowUpgrade(false)} />
       )}
     </div>
   );

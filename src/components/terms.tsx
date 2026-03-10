@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 
-const CSS = `
+const CSS = 
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#03070f;--surf:#080f1c;--b1:#0e1e35;--t1:#e8f4f8;--t2:#7a9ab5;--t3:#3d5a73;--ac:#00d4a8;--sans:'Tajawal',sans-serif}
